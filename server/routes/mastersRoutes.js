@@ -1,10 +1,24 @@
 import express from 'express';
 import * as m from '../controllers/mastersController.js';
 import { verifyToken, adminOrManager } from '../middleware/auth.js';
+import { uploadImages } from '../middleware/upload.js';
 
 const router = express.Router();
 router.use(verifyToken);
 router.use(adminOrManager);
+
+router.post('/upload', (req, res, next) => {
+  req.query.folder = req.query.folder || 'activities';
+  next();
+}, (req, res, next) => {
+  uploadImages.single('file')(req, res, (err) => {
+    if (err) {
+      console.error('Masters upload:', err.message || err);
+      return res.status(400).json({ message: err.message || 'Upload failed.' });
+    }
+    next();
+  });
+}, m.uploadFile);
 
 router.get('/cities', m.listCities);
 router.post('/cities', m.createCity);

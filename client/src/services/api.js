@@ -62,6 +62,11 @@ export const getActivities = () => api.get('/masters/activities');
 export const createActivity = (data) => api.post('/masters/activities', data);
 export const updateActivity = (id, data) => api.put(`/masters/activities/${id}`, data);
 export const deleteActivity = (id) => api.delete(`/masters/activities/${id}`);
+export const uploadMastersFile = (folder, file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post(`/masters/upload?folder=${encodeURIComponent(folder)}`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
 // Packages
 export const getPackages = () => api.get('/packages');
 export const getPackage = (id) => api.get(`/packages/${id}`);
@@ -87,7 +92,17 @@ export const getQuotations = () => api.get('/quotations');
 export const getQuotation = (id) => api.get(`/quotations/${id}`);
 export const createQuotation = (data) => api.post('/quotations', data);
 export const updateQuotation = (id, data) => api.put(`/quotations/${id}`, data);
+export const deleteQuotation = (id) => api.delete(`/quotations/${id}`);
 export const convertQuotationToBooking = (id) => api.post(`/quotations/${id}/convert-booking`);
+
+// Invoices (standalone invoice module)
+export const getInvoices = () => api.get('/invoices');
+export const getInvoice = (id) => api.get(`/invoices/${id}`);
+export const getNextInvoiceNumber = () => api.get('/invoices/next-number');
+export const createInvoice = (data) => api.post('/invoices', data);
+export const updateInvoice = (id, data) => api.put(`/invoices/${id}`, data);
+export const deleteInvoice = (id) => api.delete(`/invoices/${id}`);
+export const addInvoicePayment = (id, data) => api.post(`/invoices/${id}/payments`, data);
 
 // Payments
 export const getPaymentsByBooking = (bookingId) => api.get(`/payments/booking/${bookingId}`);
@@ -116,6 +131,7 @@ export const getStaffPerformanceReport = () => api.get('/reports/staff-performan
 // PDF
 export const downloadItinerary = (id) => api.get(`/pdf/itinerary/${id}`, { responseType: 'blob' });
 export const downloadInvoice = (id) => api.get(`/pdf/invoice/${id}`, { responseType: 'blob' });
+export const downloadInvoicePdf = (id) => api.get(`/pdf/invoice-doc/${id}`, { responseType: 'blob' });
 export const downloadQuotationPdf = (id) => api.get(`/pdf/quotation/${id}`, { responseType: 'blob' });
 
 export default api;

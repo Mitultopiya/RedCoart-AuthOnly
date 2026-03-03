@@ -4,7 +4,7 @@ const tableColumns = {
   cities: ['name', 'country'],
   hotels: ['name', 'city_id', 'address', 'contact', 'room_type', 'price'],
   vehicles: ['name', 'type', 'capacity', 'city_id'],
-  activities: ['name', 'description', 'city_id'],
+  activities: ['name', 'description', 'city_id', 'image_url'],
 };
 
 async function list(req, res, table) {
@@ -85,3 +85,15 @@ export const listActivities = (req, res) => list(req, res, 'activities');
 export const createActivity = (req, res) => create(req, res, 'activities');
 export const updateActivity = (req, res) => update(req, res, 'activities');
 export const removeActivity = (req, res) => remove(req, res, 'activities');
+
+export const uploadFile = (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded.' });
+    const folder = req.query.folder || 'activities';
+    const url = `/uploads/${folder}/${req.file.filename}`;
+    res.json({ url, filename: req.file.filename });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};

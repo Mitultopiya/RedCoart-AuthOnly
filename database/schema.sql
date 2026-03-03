@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS activities (
   name VARCHAR(255) NOT NULL,
   description TEXT,
   city_id INTEGER REFERENCES cities(id) ON DELETE SET NULL,
+  image_url VARCHAR(500),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -196,6 +197,68 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_payments_booking ON payments(booking_id);
+
+-- Invoices (standalone invoice module)
+CREATE TABLE IF NOT EXISTS invoices (
+  id SERIAL PRIMARY KEY,
+  invoice_number VARCHAR(50) UNIQUE NOT NULL,
+  booking_id INTEGER REFERENCES bookings(id) ON DELETE SET NULL,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+  invoice_date DATE NOT NULL,
+  due_date DATE NOT NULL,
+  subtotal DECIMAL(12, 2) DEFAULT 0,
+  discount DECIMAL(12, 2) DEFAULT 0,
+  discount_type VARCHAR(20) DEFAULT 'flat',
+  tax_percent DECIMAL(5, 2) DEFAULT 0,
+  tax_amount DECIMAL(12, 2) DEFAULT 0,
+  service_charges DECIMAL(12, 2) DEFAULT 0,
+  round_off DECIMAL(12, 2) DEFAULT 0,
+  total DECIMAL(12, 2) NOT NULL,
+  status VARCHAR(30) DEFAULT 'draft' CHECK (status IN ('draft', 'issued', 'partially_paid', 'paid', 'overdue', 'cancelled')),
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  place_of_supply VARCHAR(100),
+  billing_address TEXT,
+  customer_gst VARCHAR(50),
+  travel_destination VARCHAR(255),
+  travel_start_date DATE,
+  travel_end_date DATE,
+  adults INTEGER DEFAULT 0,
+  children INTEGER DEFAULT 0,
+  package_name VARCHAR(255),
+  hotel_category VARCHAR(100),
+  vehicle_type VARCHAR(100),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_booking ON invoices(booking_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(invoice_date);
+
+CREATE TABLE IF NOT EXISTS invoice_items (
+  id SERIAL PRIMARY KEY,
+  invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  description VARCHAR(500),
+  quantity DECIMAL(10, 2) DEFAULT 1,
+  rate DECIMAL(12, 2) DEFAULT 0,
+  amount DECIMAL(12, 2) DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id);
+
+CREATE TABLE IF NOT EXISTS invoice_payments (
+  id SERIAL PRIMARY KEY,
+  invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  amount DECIMAL(12, 2) NOT NULL,
+  mode VARCHAR(50) NOT NULL CHECK (mode IN ('cash', 'upi', 'bank', 'card')),
+  reference VARCHAR(255),
+  paid_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoice_payments_invoice ON invoice_payments(invoice_id);
 
 -- Documents (customer docs, booking docs, etc.)
 CREATE TABLE IF NOT EXISTS documents (

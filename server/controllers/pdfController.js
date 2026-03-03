@@ -1,5 +1,5 @@
 import pool from '../config/db.js';
-import { generateItineraryPDF, generateInvoicePDF, generateQuotationPDF } from '../services/pdfService.js';
+import { generateItineraryPDF, generateInvoicePDF, generateQuotationPDF, generateInvoiceDocPDF } from '../services/pdfService.js';
 
 export const itinerary = async (req, res) => {
   try {
@@ -32,6 +32,24 @@ export const invoice = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+export const invoiceDocPdf = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const inv = await pool.query('SELECT * FROM invoices WHERE id = $1', [id]);
+    if (inv.rows.length === 0) return res.status(404).json({ message: 'Invoice not found.' });
+    const customer = await pool.query('SELECT * FROM customers WHERE id = $1', [inv.rows[0].customer_id]);
+    const items = await pool.query('SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY id', [id]);
+    const buf = await generateInvoiceDocPDF(inv.rows[0], customer.rows[0] || {}, items.rows);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=invoice-${inv.rows[0].invoice_number || id}.pdf`);
+    res.send(buf);
+  } catch (err) {
+    console.error('Invoice doc PDF error:', err?.message || err);
+    if (err?.stack) console.error(err.stack);
+    res.status(500).json({ message: 'Server error.', error: process.env.NODE_ENV !== 'production' ? (err?.message || String(err)) : undefined });
   }
 };
 

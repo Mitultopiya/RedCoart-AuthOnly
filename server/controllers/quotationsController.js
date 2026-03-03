@@ -89,6 +89,18 @@ export const update = async (req, res) => {
   }
 };
 
+export const remove = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query('DELETE FROM quotations WHERE id = $1 RETURNING id', [id]);
+    if (result.rowCount === 0) return res.status(404).json({ message: 'Quotation not found.' });
+    res.json({ message: 'Deleted.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 export const convertToBooking = async (req, res) => {
   try {
     const { id } = req.params;

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getQuotations, getQuotation, createQuotation, getCustomers, getPackages, convertQuotationToBooking, downloadQuotationPdf } from '../../services/api';
+import { getQuotations, getQuotation, createQuotation, updateQuotation, deleteQuotation, getCustomers, getPackages, convertQuotationToBooking, downloadQuotationPdf } from '../../services/api';
 import Loading from '../../components/Loading';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -22,6 +22,7 @@ export default function Quotations() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState({ open: false });
+  const [editingId, setEditingId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [packages, setPackages] = useState([]);
@@ -49,6 +50,7 @@ export default function Quotations() {
   }, []);
 
   const openAdd = () => {
+    setEditingId(null);
     setForm({
       customer_id: '',
       package_id: '',
@@ -61,6 +63,29 @@ export default function Quotations() {
       ],
     });
     setModal({ open: true });
+  };
+
+  const openEdit = (row) => {
+    getQuotation(row.id)
+      .then((r) => {
+        const q = r.data;
+        setForm({
+          customer_id: q.customer_id ? String(q.customer_id) : '',
+          package_id: q.package_id ? String(q.package_id) : '',
+          valid_until: q.valid_until ? String(q.valid_until).slice(0, 10) : '',
+          discount: q.discount != null ? String(q.discount) : '0',
+          tax_percent: q.tax_percent != null ? String(q.tax_percent) : '0',
+          items: (q.items || []).map((it) => ({
+            item: '',
+            description: it.description || '',
+            qty: '1',
+            price: String(it.amount || 0),
+          })),
+        });
+        setEditingId(q.id);
+        setModal({ open: true });
+      })
+      .catch(() => toast('Failed to load quotation', 'error'));
   };
 
   const openDetail = (row) => {
@@ -111,18 +136,36 @@ export default function Quotations() {
       const pkg = packages.find((p) => p.id === Number(form.package_id));
       if (pkg) items.unshift({ description: `Package: ${pkg.name || pkg.title}`, amount: Number(pkg.price) || 0 });
     }
-    setSaving(true);
-    createQuotation({
+    const payload = {
       customer_id: Number(form.customer_id),
       package_id: form.package_id ? Number(form.package_id) : null,
       valid_until: form.valid_until || null,
       discount: Number(form.discount) || 0,
       tax_percent: Number(form.tax_percent) || 0,
       items,
-    })
-      .then(() => { toast('Quotation created'); setModal({ open: false }); load(); })
+    };
+    setSaving(true);
+    const req = editingId ? updateQuotation(editingId, payload) : createQuotation(payload);
+    req
+      .then(() => {
+        toast(editingId ? 'Quotation updated' : 'Quotation created');
+        setModal({ open: false });
+        setEditingId(null);
+        load();
+      })
       .catch((err) => toast(err.response?.data?.message || 'Failed', 'error'))
       .finally(() => setSaving(false));
+  };
+
+  const handleDelete = (row) => {
+    if (!window.confirm(`Delete quotation #${row.id}?`)) return;
+    deleteQuotation(row.id)
+      .then(() => {
+        toast('Quotation deleted');
+        if (detail?.id === row.id) setDetail(null);
+        load();
+      })
+      .catch(() => toast('Delete failed', 'error'));
   };
 
   const handleConvert = (id) => {
@@ -165,15 +208,17 @@ export default function Quotations() {
             data={list}
             emptyMessage="No quotations yet."
             actions={(row) => (
-              <div className="flex justify-end gap-2">
-                <Button size="sm" variant="secondary" onClick={() => openDetail(row)}>View</Button>
+              <div className="flex items-center justify-end gap-2">
+                <Button size="sm" variant="ghost" onClick={() => openDetail(row)}>View</Button>
+                <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>Edit</Button>
+                <Button size="sm" variant="danger" onClick={() => handleDelete(row)}>Delete</Button>
               </div>
             )}
           />
         )}
       </Card>
 
-      <Modal open={modal.open} onClose={() => setModal({ open: false })} title="New Quotation" size="xl">
+      <Modal open={modal.open} onClose={() => { setModal({ open: false }); setEditingId(null); }} title={editingId ? 'Edit Quotation' : 'New Quotation'} size="xl">
         <form onSubmit={handleCreate} className="space-y-6">
           {/* Section A – Basic Information */}
           <Card>
@@ -347,7 +392,7 @@ export default function Quotations() {
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? 'Creating...' : 'Create Quotation'}
+              {saving ? (editingId ? 'Saving...' : 'Creating...') : editingId ? 'Save Changes' : 'Create Quotation'}
             </Button>
           </div>
         </form>
@@ -442,6 +487,7 @@ export default function Quotations() {
             {/* Actions */}
             <div className="flex flex-wrap justify-end gap-2 pt-4 border-t border-slate-200 print:hidden">
               <Button variant="secondary" onClick={() => setDetail(null)}>Close</Button>
+              <Button variant="secondary" onClick={() => openEdit(detail)}>Edit</Button>
               <Button variant="secondary" onClick={() => handleDownloadPdf(detail.id)}>Download PDF</Button>
             </div>
           </div>

@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { getActivities, getCities, createActivity, updateActivity, deleteActivity } from '../../../services/api';
+import { getActivities, getCities, createActivity, updateActivity, deleteActivity, uploadMastersFile, uploadBaseUrl } from '../../../services/api';
 import Loading from '../../../components/Loading';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import Modal from '../../../components/ui/Modal';
 import DataTable from '../../../components/DataTable';
+import FileUpload from '../../../components/FileUpload';
 import { useToast } from '../../../context/ToastContext';
 
 export default function Activities() {
@@ -14,8 +15,9 @@ export default function Activities() {
   const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState({ open: false, data: null });
-  const [form, setForm] = useState({ name: '', description: '', city_id: '' });
+  const [form, setForm] = useState({ name: '', description: '', city_id: '', image_url: '' });
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -26,13 +28,26 @@ export default function Activities() {
   };
   useEffect(() => { load(); }, []);
 
-  const openAdd = () => { setForm({ name: '', description: '', city_id: '' }); setModal({ open: true, data: null }); };
-  const openEdit = (row) => { setForm({ name: row.name || '', description: row.description || '', city_id: row.city_id ?? '' }); setModal({ open: true, data: row }); };
+  const openAdd = () => { setForm({ name: '', description: '', city_id: '', image_url: '' }); setModal({ open: true, data: null }); };
+  const openEdit = (row) => { setForm({ name: row.name || '', description: row.description || '', city_id: row.city_id ?? '', image_url: row.image_url || '' }); setModal({ open: true, data: row }); };
+
+  const handleImageSelect = (file) => {
+    if (!file || !file.type?.startsWith('image/')) { toast('Please choose an image (JPG, PNG, GIF, WebP)', 'error'); return; }
+    setUploading(true);
+    uploadMastersFile('activities', file)
+      .then((res) => {
+        const url = res.data?.url || '';
+        setForm((f) => ({ ...f, image_url: url }));
+        toast('Image uploaded');
+      })
+      .catch((err) => toast(err.response?.data?.message || 'Upload failed', 'error'))
+      .finally(() => setUploading(false));
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     setSaving(true);
-    const payload = { ...form, city_id: form.city_id ? Number(form.city_id) : null };
+    const payload = { ...form, city_id: form.city_id ? Number(form.city_id) : null, image_url: form.image_url || null };
     (modal.data ? updateActivity(modal.data.id, payload) : createActivity(payload))
       .then(() => { toast(modal.data ? 'Activity updated' : 'Activity added'); setModal({ open: false, data: null }); load(); })
       .catch((err) => toast(err.response?.data?.message || 'Failed', 'error'))
@@ -59,6 +74,7 @@ export default function Activities() {
               { key: 'name', label: 'Name' },
               { key: 'description', label: 'Description' },
               { key: 'city_id', label: 'City', render: (r) => getCityName(r.city_id) },
+              { key: 'image_url', label: 'Image', render: (r) => r.image_url ? <img src={(uploadBaseUrl || '') + r.image_url} alt="" className="h-8 w-8 object-cover rounded" /> : '-' },
             ]}
             data={list}
             emptyMessage="No activities. Add your first activity."
@@ -84,6 +100,19 @@ export default function Activities() {
               <option value="">— Select —</option>
               {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Activity Image</label>
+            <div className="flex flex-wrap items-center gap-3">
+              <FileUpload onSelect={handleImageSelect} accept=".jpg,.jpeg,.png,.gif,.webp,image/*" />
+              {uploading && <span className="text-sm text-slate-500">Uploading…</span>}
+              {form.image_url && (
+                <div className="flex items-center gap-2">
+                  <img src={(uploadBaseUrl || '') + form.image_url} alt="Activity" className="h-20 w-20 object-cover rounded-lg border border-slate-200" />
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setForm((f) => ({ ...f, image_url: '' }))}>Remove</Button>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setModal({ open: false, data: null })}>Cancel</Button>

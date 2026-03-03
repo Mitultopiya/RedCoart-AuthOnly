@@ -15,6 +15,7 @@ import bookingRoutes from './routes/bookingRoutes.js';
 import customersRoutes from './routes/customersRoutes.js';
 import mastersRoutes from './routes/mastersRoutes.js';
 import quotationRoutes from './routes/quotationRoutes.js';
+import invoiceRoutes from './routes/invoiceRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import documentRoutes from './routes/documentRoutes.js';
 import staffRoutes from './routes/staffRoutes.js';
@@ -74,6 +75,7 @@ app.post('/api/packages/upload', verifyToken, adminOrManager, (req, res, next) =
 app.use('/api/packages', packageRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/quotations', quotationRoutes);
+app.use('/api/invoices', invoiceRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/staff', staffRoutes);
