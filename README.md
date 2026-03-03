@@ -1,11 +1,18 @@
-# Travel Agency Management System
+# Travel Agency Management System (Enterprise)
 
-Full-stack web application for managing a travel agency: authentication (login only), admin user management, travel packages, and bookings.
+Full-stack ERP-style travel agency application with CRM, package builder, bookings, quotations, payments, staff management, and reports.
 
 ## Tech Stack
 
-- **Frontend:** Vite, React, Tailwind CSS, React Router, Axios
-- **Backend:** Node.js, Express.js, PostgreSQL, JWT, bcrypt
+- **Frontend:** React, Vite, Tailwind CSS, React Router, Axios
+- **Backend:** Node.js, Express.js, PostgreSQL, JWT, bcrypt, Multer, pdf-lib
+- **Roles:** Admin, Manager, Staff (login only, no signup)
+
+## Default Admin
+
+- **Email:** admin@travel.com  
+- **Password:** admin123  
+- Created automatically on first server start.
 
 ## Prerequisites
 
@@ -14,122 +21,96 @@ Full-stack web application for managing a travel agency: authentication (login o
 
 ## Database Setup
 
-1. Create a PostgreSQL database:
+1. Create database:
+   ```bash
+   createdb travel_agency
+   ```
 
-```bash
-createdb travel_agency
-```
-
-2. (Optional) Run the schema manually, or let the server create tables on first run:
-
-```bash
-psql -d travel_agency -f database/schema.sql
-```
+2. (Optional) Run schema manually:
+   ```bash
+   psql -d travel_agency -f database/schema.sql
+   ```
+   Or let the server create/alter tables on startup via `initDb`.
 
 ## Backend Setup
-
-1. Go to the server folder and install dependencies:
 
 ```bash
 cd server
 npm install
-```
-
-2. Create a `.env` file (copy from `.env.example`):
-
-```bash
 cp .env.example .env
-```
-
-3. Edit `.env` and set:
-
-- `PORT` – server port (default 5000)
-- `JWT_SECRET` – a long random string for signing JWTs
-- `DATABASE_URL` – e.g. `postgresql://username:password@localhost:5432/travel_agency`
-
-4. Start the server:
-
-```bash
+# Edit .env: PORT, JWT_SECRET, DATABASE_URL or DB_* vars
 npm start
 ```
 
-The server will create tables if they don’t exist and seed a default admin user.
-
-**Default admin:**
-
-- Email: `admin@travel.com`
-- Password: `admin123`
-- Role: admin
+Server runs at http://localhost:5000. Tables are created/updated automatically; default admin is seeded if missing.
 
 ## Frontend Setup
-
-1. Go to the client folder and install dependencies:
 
 ```bash
 cd client
 npm install
-```
-
-2. (Optional) Create `.env` in `client/` if the API is not on localhost:5000:
-
-```
-VITE_API_URL=http://localhost:5000/api
-```
-
-3. Start the dev server:
-
-```bash
+# Optional: set VITE_API_URL in .env (default http://localhost:5000/api)
 npm run dev
 ```
 
-Open http://localhost:5173 in your browser.
+Open http://localhost:5173.
 
-## Usage
+## Core Modules
 
-1. **Login** – Use the default admin or any user created by an admin. No signup page; admins create users from the Admin Panel.
-2. **Admin** – After login as admin you can:
-   - View dashboard stats
-   - Manage users (create/delete)
-   - Manage packages (create/edit/delete)
-   - View all bookings and update booking status (pending / confirmed / cancelled)
-3. **User** – After login as user you can:
-   - View dashboard
-   - Browse and book travel packages
-   - View “My Bookings” and their status
+1. **Dashboard** – Total customers, active bookings, revenue, pending payments, recent activities
+2. **Customer CRM** – Add/edit/view customers, family members, notes, search/filters
+3. **Package Builder** – Create packages, day-wise itinerary, hotels/meals/transport, optional PDF itinerary
+4. **Master Data** – Cities, Hotels, Vehicles, Activities, Guides (full CRUD)
+5. **Booking Management** – Select customer & package, travel dates, assign hotel/vehicle/staff/guide, status workflow (inquiry → quotation_sent → confirmed → ongoing → completed/cancelled), notes
+6. **Quotations** – Create quotation, items, discount, tax, PDF, convert to booking
+7. **Payments** – Record payments (cash/UPI/bank/card), track paid/due, invoice PDF
+8. **Staff Management** – Add staff (manager/staff), assign to bookings, block/unblock, performance
+9. **Documents** – Upload and link files to customers/bookings
+10. **Reports** – Dashboard stats, revenue, pending payments, staff performance
+
+## Role Permissions
+
+- **Admin:** Full access; user management (create/delete/block).
+- **Manager:** Customers, packages, bookings, quotations, payments, reports, staff (no delete staff).
+- **Staff:** View assigned bookings only, update status, add notes.
 
 ## API Overview
 
 - `POST /api/auth/login` – Login (email, password)
-- `GET /api/users` – List users (admin)
-- `POST /api/users` – Create user (admin)
-- `DELETE /api/users/:id` – Delete user (admin)
-- `GET /api/packages` – List packages
-- `POST /api/packages` – Create package (admin)
-- `PUT /api/packages/:id` – Update package (admin)
-- `DELETE /api/packages/:id` – Delete package (admin)
-- `POST /api/bookings` – Create booking (user)
-- `GET /api/bookings/user` – Current user’s bookings
-- `GET /api/bookings` – All bookings (admin)
-- `PUT /api/bookings/:id/status` – Update booking status (admin)
+- `GET/POST/DELETE /api/users` – Users (admin)
+- `GET/POST/PUT/DELETE /api/customers` – Customers (+ family)
+- `GET/POST/PUT/DELETE /api/masters/cities|hotels|vehicles|activities|guides` – Masters
+- `GET/POST/PUT/DELETE /api/packages` – Packages; `POST /api/packages/:id/days` – itinerary days
+- `GET/POST/PUT /api/bookings` – Bookings; `POST /api/bookings/:id/notes` – notes
+- `GET/POST/PUT /api/quotations` – Quotations; `POST /api/quotations/:id/convert-booking`
+- `GET /api/payments/booking/:id` – Payments by booking; `POST/DELETE /api/payments`
+- `GET/POST/DELETE /api/documents` – Documents (query: entity_type, entity_id)
+- `GET/POST/PUT/PATCH /api/staff` – Staff; `GET /api/staff/:id/performance`
+- `GET /api/reports/dashboard|revenue|pending-payments|staff-performance`
+- `GET /api/pdf/itinerary/:id|invoice/:id|quotation/:id` – PDF download
+
+JWT in `Authorization: Bearer <token>`. Base URL: `http://localhost:5000/api`.
 
 ## Project Structure
 
 ```
 Travel-Agency/
-├── client/                 # Vite + React frontend
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   │   ├── Admin/
-│   │   │   └── User/
-│   │   ├── services/
-│   │   └── utils/
-│   └── ...
-├── server/                 # Express backend
-│   ├── config/
-│   ├── controllers/
-│   ├── middleware/
+├── client/src/
+│   ├── components/     # Sidebar, Header, DataTable, FormModal, FileUpload, StatusBadge, ChartCard
+│   ├── pages/
+│   │   ├── Auth/Login.jsx
+│   │   ├── Admin/      # Dashboard, Customers, Packages, PackageBuilder, Bookings, Quotations, Payments, Reports, Staff
+│   │   │   └── Masters/ # Cities, Hotels, Vehicles, Activities, Guides
+│   │   └── Staff/      # Dashboard, MyBookings, BookingDetails
+│   ├── services/api.js
+│   └── utils/auth.js
+├── server/
+│   ├── config/         # db.js, initDb.js
+│   ├── controllers/    # auth, users, customers, masters, packages, bookings, quotations, payments, documents, staff, reports, pdf
+│   ├── middleware/     # auth.js (JWT, roles), upload.js (Multer)
 │   ├── routes/
+│   ├── services/       # pdfService.js
+│   ├── uploads/
 │   └── server.js
 ├── database/
 │   └── schema.sql
@@ -139,5 +120,5 @@ Travel-Agency/
 ## Security
 
 - Passwords hashed with bcrypt
-- JWT for authentication; admin routes protected by role middleware
-- Store secrets in `.env`; do not commit `.env` to version control
+- JWT authentication; role-based middleware (admin, adminOrManager, anyAuth)
+- Store secrets in `.env`; do not commit `.env`

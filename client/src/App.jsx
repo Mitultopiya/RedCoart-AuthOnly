@@ -1,25 +1,43 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import Login from './pages/Login';
-import AdminDashboard from './pages/Admin/Dashboard';
-import AdminUsers from './pages/Admin/Users';
-import AdminPackages from './pages/Admin/Packages';
-import AdminBookings from './pages/Admin/Bookings';
-import UserDashboard from './pages/User/Dashboard';
-import UserPackages from './pages/User/Packages';
-import UserMyBookings from './pages/User/MyBookings';
 import { getStoredUser } from './utils/auth';
 
-function ProtectedRoute({ children, adminOnly = false }) {
+import Login from './pages/Login';
+import AdminLayout from './components/AdminLayout';
+import StaffLayout from './components/StaffLayout';
+import AdminDashboard from './pages/Admin/Dashboard';
+import AdminCustomers from './pages/Admin/Customers';
+import AdminPackages from './pages/Admin/Packages';
+import AdminPackageBuilder from './pages/Admin/PackageBuilder';
+import AdminBookings from './pages/Admin/Bookings';
+import AdminPreferredItems from './pages/Admin/PreferredItems';
+import AdminQuotations from './pages/Admin/Quotations';
+import AdminInvoices from './pages/Admin/Invoices';
+import AdminPaymentSlips from './pages/Admin/PaymentSlips';
+import AdminReports from './pages/Admin/Reports';
+import AdminStaff from './pages/Admin/Staff';
+import AdminCities from './pages/Admin/Masters/Cities';
+import AdminHotels from './pages/Admin/Masters/Hotels';
+import AdminVehicles from './pages/Admin/Masters/Vehicles';
+import AdminActivities from './pages/Admin/Masters/Activities';
+import StaffDashboard from './pages/Staff/Dashboard';
+import StaffMyBookings from './pages/Staff/MyBookings';
+import StaffBookingDetails from './pages/Staff/BookingDetails';
+
+function ProtectedRoute({ children, allowRoles }) {
   const user = getStoredUser();
   if (!user) return <Navigate to="/login" replace />;
-  if (adminOnly && user.role !== 'admin') return <Navigate to="/user" replace />;
+  if (allowRoles && !allowRoles.includes(user.role)) {
+    if (user.role === 'staff') return <Navigate to="/staff" replace />;
+    return <Navigate to="/admin" replace />;
+  }
   return children;
 }
 
 function PublicRoute({ children }) {
   const user = getStoredUser();
   if (user) {
-    return <Navigate to={user.role === 'admin' ? '/admin' : '/user'} replace />;
+    if (user.role === 'staff') return <Navigate to="/staff" replace />;
+    return <Navigate to="/admin" replace />;
   }
   return children;
 }
@@ -27,70 +45,33 @@ function PublicRoute({ children }) {
 function App() {
   return (
     <Routes>
-      <Route
-        path="/login"
-        element={
-          <PublicRoute>
-            <Login />
-          </PublicRoute>
-        }
-      />
-      <Route
-        path="/admin"
-        element={
-          <ProtectedRoute adminOnly>
-            <AdminDashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/users"
-        element={
-          <ProtectedRoute adminOnly>
-            <AdminUsers />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/packages"
-        element={
-          <ProtectedRoute adminOnly>
-            <AdminPackages />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/bookings"
-        element={
-          <ProtectedRoute adminOnly>
-            <AdminBookings />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/user"
-        element={
-          <ProtectedRoute>
-            <UserDashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/user/packages"
-        element={
-          <ProtectedRoute>
-            <UserPackages />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/user/bookings"
-        element={
-          <ProtectedRoute>
-            <UserMyBookings />
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+
+      <Route path="/admin" element={<ProtectedRoute allowRoles={['admin', 'manager']}><AdminLayout /></ProtectedRoute>}>
+        <Route index element={<AdminDashboard />} />
+        <Route path="customers" element={<AdminCustomers />} />
+        <Route path="packages" element={<AdminPackages />} />
+        <Route path="package-builder" element={<AdminPackageBuilder />} />
+        <Route path="package-builder/:id" element={<AdminPackageBuilder />} />
+        <Route path="bookings" element={<AdminBookings />} />
+        <Route path="preferred-items" element={<AdminPreferredItems />} />
+        <Route path="quotations" element={<AdminQuotations />} />
+        <Route path="invoice" element={<AdminInvoices />} />
+        <Route path="payment-slip" element={<AdminPaymentSlips />} />
+        <Route path="reports" element={<AdminReports />} />
+        <Route path="staff" element={<AdminStaff />} />
+        <Route path="masters/cities" element={<AdminCities />} />
+        <Route path="masters/hotels" element={<AdminHotels />} />
+        <Route path="masters/vehicles" element={<AdminVehicles />} />
+        <Route path="masters/activities" element={<AdminActivities />} />
+      </Route>
+
+      <Route path="/staff" element={<ProtectedRoute allowRoles={['staff']}><StaffLayout /></ProtectedRoute>}>
+        <Route index element={<StaffDashboard />} />
+        <Route path="bookings" element={<StaffMyBookings />} />
+        <Route path="bookings/:id" element={<StaffBookingDetails />} />
+      </Route>
+
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

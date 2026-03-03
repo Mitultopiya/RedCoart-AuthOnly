@@ -1,20 +1,13 @@
 import express from 'express';
-import {
-  createBooking,
-  getMyBookings,
-  getAllBookings,
-  updateBookingStatus,
-} from '../controllers/bookingsController.js';
-import { verifyToken, adminOnly } from '../middleware/auth.js';
+import * as c from '../controllers/bookingsController.js';
+import { verifyToken, adminOrManager, anyAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// User: create booking and get own bookings
-router.post('/', verifyToken, createBooking);
-router.get('/user', verifyToken, getMyBookings);
-
-// Admin: get all bookings and update status
-router.get('/', verifyToken, adminOnly, getAllBookings);
-router.put('/:id/status', verifyToken, adminOnly, updateBookingStatus);
+router.get('/', verifyToken, anyAuth, c.list);
+router.get('/:id', verifyToken, anyAuth, c.getOne);
+router.post('/', verifyToken, adminOrManager, c.create);
+router.put('/:id', verifyToken, adminOrManager, c.update);
+router.post('/:id/notes', verifyToken, anyAuth, c.addNote);
 
 export default router;

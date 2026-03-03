@@ -1,109 +1,134 @@
 import pool from '../config/db.js';
 
-/**
- * POST /api/bookings - Create booking (user)
- */
-export const createBooking = async (req, res) => {
+export const list = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const { package_id } = req.body;
-
-    if (!package_id) {
-      return res.status(400).json({ message: 'Package ID is required.' });
-    }
-
-    const pkgResult = await pool.query('SELECT id FROM packages WHERE id = $1', [package_id]);
-    if (pkgResult.rowCount === 0) {
-      return res.status(404).json({ message: 'Package not found.' });
-    }
-
+    const { status, staff_id, page = 1, limit = 20 } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+    const isStaff = req.user?.role === 'staff';
+    const conditions = [];
+    const params = [];
+    let idx = 1;
+    if (status) { params.push(status); conditions.push(`b.status = $${idx++}`); }
+    if (staff_id) { params.push(staff_id); conditions.push(`b.assigned_staff_id = $${idx++}`); }
+    if (isStaff) { params.push(req.user.id); conditions.push(`b.assigned_staff_id = $${idx++}`); }
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    params.push(Number(limit), offset);
     const result = await pool.query(
-      'INSERT INTO bookings (user_id, package_id, status) VALUES ($1, $2, $3) RETURNING *',
-      [userId, package_id, 'pending']
-    );
-
-    const booking = result.rows[0];
-    const pkg = await pool.query('SELECT title, location, price, days FROM packages WHERE id = $1', [package_id]);
-    res.status(201).json({
-      ...booking,
-      package: pkg.rows[0],
-    });
-  } catch (err) {
-    console.error('Create booking error:', err);
-    res.status(500).json({ message: 'Server error.' });
-  }
-};
-
-/**
- * GET /api/bookings/user - Get current user's bookings
- */
-export const getMyBookings = async (req, res) => {
-  try {
-    const userId = req.user.id;
-
-    const result = await pool.query(
-      `SELECT b.id, b.booking_date, b.status, b.created_at,
-              p.id as package_id, p.title, p.location, p.price, p.days, p.image_url
+      `SELECT b.*, c.name as customer_name, c.email as customer_email, c.mobile as customer_mobile,
+              p.name as package_name, p.price as package_price
        FROM bookings b
-       JOIN packages p ON b.package_id = p.id
-       WHERE b.user_id = $1
-       ORDER BY b.created_at DESC`,
-      [userId]
+       LEFT JOIN customers c ON b.customer_id = c.id
+       LEFT JOIN packages p ON b.package_id = p.id
+       ${where}
+       ORDER BY b.created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`,
+      params
     );
-
-    res.json(result.rows);
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM bookings b ${where}`,
+      params.slice(0, -2)
+    );
+    res.json({ data: result.rows, total: parseInt(countResult.rows[0]?.count || 0, 10) });
   } catch (err) {
-    console.error('Get my bookings error:', err);
+    console.error(err);
     res.status(500).json({ message: 'Server error.' });
   }
 };
 
-/**
- * GET /api/bookings - Get all bookings (admin only)
- */
-export const getAllBookings = async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT b.id, b.booking_date, b.status, b.created_at,
-              u.id as user_id, u.name as user_name, u.email as user_email,
-              p.id as package_id, p.title as package_title, p.location, p.price, p.days
-       FROM bookings b
-       JOIN users u ON b.user_id = u.id
-       JOIN packages p ON b.package_id = p.id
-       ORDER BY b.created_at DESC`
-    );
-
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Get all bookings error:', err);
-    res.status(500).json({ message: 'Server error.' });
-  }
-};
-
-/**
- * PUT /api/bookings/:id/status - Update booking status (admin only)
- */
-export const updateBookingStatus = async (req, res) => {
+export const getOne = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
-
-    if (!['pending', 'confirmed', 'cancelled'].includes(status)) {
-      return res.status(400).json({ message: 'Status must be pending, confirmed or cancelled.' });
-    }
-
-    const result = await pool.query(
-      'UPDATE bookings SET status = $1 WHERE id = $2 RETURNING *',
-      [status, id]
+    const booking = await pool.query(
+      `SELECT b.*, c.name as customer_name, c.email as customer_email, c.mobile as customer_mobile, c.address as customer_address,
+              p.name as package_name, p.description as package_description, p.price as package_price, p.duration_days
+       FROM bookings b
+       LEFT JOIN customers c ON b.customer_id = c.id
+       LEFT JOIN packages p ON b.package_id = p.id
+       WHERE b.id = $1`,
+      [id]
     );
+    if (booking.rows.length === 0) return res.status(404).json({ message: 'Booking not found.' });
+    const notes = await pool.query('SELECT bn.*, u.name as user_name FROM booking_notes bn LEFT JOIN users u ON bn.user_id = u.id WHERE bn.booking_id = $1 ORDER BY bn.created_at', [id]);
+    const payments = await pool.query('SELECT * FROM payments WHERE booking_id = $1 ORDER BY paid_at', [id]);
+    res.json({ ...booking.rows[0], notes: notes.rows, payments: payments.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: 'Booking not found.' });
-    }
+export const create = async (req, res) => {
+  try {
+    const {
+      customer_id,
+      package_id,
+      travel_start_date,
+      travel_end_date,
+      total_amount,
+      status,
+      assigned_hotel_id,
+      assigned_vehicle_id,
+      assigned_staff_id,
+      assigned_guide_id,
+      internal_notes,
+    } = req.body;
+    if (!customer_id || !package_id) return res.status(400).json({ message: 'customer_id and package_id required.' });
+    const result = await pool.query(
+      `INSERT INTO bookings (customer_id, package_id, travel_start_date, travel_end_date, total_amount, status,
+        assigned_hotel_id, assigned_vehicle_id, assigned_staff_id, assigned_guide_id, internal_notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+      [
+        customer_id,
+        package_id,
+        travel_start_date || null,
+        travel_end_date || null,
+        total_amount ?? 0,
+        status || 'inquiry',
+        assigned_hotel_id ?? null,
+        assigned_vehicle_id ?? null,
+        assigned_staff_id ?? null,
+        assigned_guide_id ?? null,
+        internal_notes ?? null,
+      ]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
 
+export const update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { travel_start_date, travel_end_date, assigned_hotel_id, assigned_vehicle_id, assigned_staff_id, assigned_guide_id, status, total_amount, internal_notes } = req.body;
+    const result = await pool.query(
+      `UPDATE bookings SET
+        travel_start_date = COALESCE($1, travel_start_date), travel_end_date = COALESCE($2, travel_end_date),
+        assigned_hotel_id = $3, assigned_vehicle_id = $4, assigned_staff_id = $5, assigned_guide_id = $6,
+        status = COALESCE($7, status), total_amount = COALESCE($8, total_amount), internal_notes = $9, updated_at = NOW()
+       WHERE id = $10 RETURNING *`,
+      [travel_start_date, travel_end_date, assigned_hotel_id ?? null, assigned_vehicle_id ?? null, assigned_staff_id ?? null, assigned_guide_id ?? null, status, total_amount != null ? Number(total_amount) : null, internal_notes ?? null, id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ message: 'Booking not found.' });
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('Update booking status error:', err);
+    console.error(err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
+export const addNote = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { note } = req.body;
+    if (!note) return res.status(400).json({ message: 'Note text required.' });
+    const result = await pool.query(
+      'INSERT INTO booking_notes (booking_id, user_id, note) VALUES ($1, $2, $3) RETURNING *',
+      [id, req.user.id, note]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Server error.' });
   }
 };
