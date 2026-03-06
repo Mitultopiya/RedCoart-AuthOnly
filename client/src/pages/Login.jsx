@@ -51,12 +51,12 @@ export default function Login() {
                 <div className="mt-3 w-16 h-16 mx-auto rounded-full bg-brand-orange/10 border-2 border-orange-400/30" />
               </div>
             )}
-            <span className="mt-6 inline-block px-5 py-1.5 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold tracking-widest uppercase">
+            {/* <span className="mt-6 inline-block px-5 py-1.5 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold tracking-widest uppercase">
               Since 2017
             </span>
             <p className="mt-4 text-slate-500 text-sm leading-relaxed">
               Your journey to seamless travel management starts here.
-            </p>
+            </p> */}
           </div>
         </div>
 
