@@ -21,6 +21,7 @@ import documentRoutes from './routes/documentRoutes.js';
 import staffRoutes from './routes/staffRoutes.js';
 import reportsRoutes from './routes/reportsRoutes.js';
 import pdfRoutes from './routes/pdfRoutes.js';
+import settingsRoutes from './routes/settingsRoutes.js';
 import { verifyToken, adminOrManager } from './middleware/auth.js';
 import { uploadImages } from './middleware/upload.js';
 import * as packagesController from './controllers/packagesController.js';
@@ -81,6 +82,7 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/pdf', pdfRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

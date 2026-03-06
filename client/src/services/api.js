@@ -103,6 +103,8 @@ export const createInvoice = (data) => api.post('/invoices', data);
 export const updateInvoice = (id, data) => api.put(`/invoices/${id}`, data);
 export const deleteInvoice = (id) => api.delete(`/invoices/${id}`);
 export const addInvoicePayment = (id, data) => api.post(`/invoices/${id}/payments`, data);
+export const getAllInvoicePayments = () => api.get('/invoices/all-payments');
+export const deleteInvoicePayment = (invoiceId, paymentId) => api.delete(`/invoices/${invoiceId}/payments/${paymentId}`);
 
 // Payments
 export const getPaymentsByBooking = (bookingId) => api.get(`/payments/booking/${bookingId}`);
@@ -119,12 +121,14 @@ export const getStaff = () => api.get('/staff');
 export const createStaff = (data) => api.post('/staff', data);
 export const updateStaff = (id, data) => api.put(`/staff/${id}`, data);
 export const toggleBlockStaff = (id, is_blocked) => api.patch(`/staff/${id}/block`, { is_blocked });
+export const resetStaffPassword = (id, new_password) => api.patch(`/staff/${id}/reset-password`, { new_password });
 export const deleteStaff = (id) => api.delete(`/staff/${id}`);
 export const getStaffPerformance = (id) => api.get(`/staff/${id}/performance`);
 
 // Reports
 export const getDashboard = () => api.get('/reports/dashboard');
 export const getRevenueReport = (params) => api.get('/reports/revenue', { params });
+export const getRevenueReportFiltered = (start, end) => api.get('/reports/revenue', { params: { start, end } });
 export const getPendingPayments = () => api.get('/reports/pending-payments');
 export const getStaffPerformanceReport = () => api.get('/reports/staff-performance');
 
@@ -133,5 +137,10 @@ export const downloadItinerary = (id) => api.get(`/pdf/itinerary/${id}`, { respo
 export const downloadInvoice = (id) => api.get(`/pdf/invoice/${id}`, { responseType: 'blob' });
 export const downloadInvoicePdf = (id) => api.get(`/pdf/invoice-doc/${id}`, { responseType: 'blob' });
 export const downloadQuotationPdf = (id) => api.get(`/pdf/quotation/${id}`, { responseType: 'blob' });
+export const downloadPaymentSlipPdf = (id) => api.get(`/pdf/payment-slip/${id}`, { responseType: 'blob' });
+
+// Company Settings
+export const getCompanySettings = () => api.get('/settings');
+export const updateCompanySettings = (data) => api.put('/settings', data);
 
 export default api;

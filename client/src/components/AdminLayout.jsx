@@ -42,6 +42,7 @@ const adminNav = [
   },
   { to: '/admin/reports', label: 'Reports', icon: FaChartLine },
   { to: '/admin/staff', label: 'Staff', icon: FaUserFriends },
+  { to: '/admin/settings', label: 'Settings', icon: FaCog },
 ];
 
 export default function AdminLayout() {

@@ -80,6 +80,26 @@ export const remove = async (req, res) => {
   }
 };
 
+export const resetPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { new_password } = req.body;
+    if (!new_password || new_password.length < 4) {
+      return res.status(400).json({ message: 'Password must be at least 4 characters.' });
+    }
+    const hashed = await bcrypt.hash(new_password, 10);
+    const result = await pool.query(
+      "UPDATE users SET password = $1, updated_at = NOW() WHERE id = $2 AND role IN ('manager', 'staff') RETURNING id",
+      [hashed, id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ message: 'Staff not found.' });
+    res.json({ message: 'Password reset successfully.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 export const performance = async (req, res) => {
   try {
     const { id } = req.params;

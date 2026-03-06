@@ -68,6 +68,7 @@ export async function initDb() {
         name VARCHAR(255) NOT NULL,
         type VARCHAR(100),
         capacity INTEGER,
+        price DECIMAL(12,2),
         city_id INTEGER REFERENCES cities(id) ON DELETE SET NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
@@ -104,6 +105,9 @@ export async function initDb() {
     await client.query(`
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS city_id INTEGER REFERENCES cities(id);
     `).catch(() => {});
+    await client.query(`
+      ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS price DECIMAL(12,2);
+    `).catch(() => {});
 
     // Activities: image_url for activity image upload
     await client.query(`
@@ -132,6 +136,12 @@ export async function initDb() {
     await client.query(`
       ALTER TABLE packages ADD COLUMN IF NOT EXISTS itinerary_pdf_url TEXT;
     `).catch(() => {});
+    await client.query(`
+      ALTER TABLE packages ADD COLUMN IF NOT EXISTS default_hotel_id INTEGER REFERENCES hotels(id);
+    `).catch(() => {});
+    await client.query(`
+      ALTER TABLE packages ADD COLUMN IF NOT EXISTS default_vehicle_id INTEGER REFERENCES vehicles(id);
+    `).catch(() => {});
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS package_days (
@@ -150,6 +160,16 @@ export async function initDb() {
     // Bookings: ensure we have customers first, then alter or create bookings
     await client.query(`
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_id INTEGER REFERENCES customers(id);
+    `).catch(() => {});
+    await client.query(`
+      ALTER TABLE bookings ALTER COLUMN package_id DROP NOT NULL;
+    `).catch(() => {});
+    await client.query(`
+      ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_package_id_fkey;
+    `).catch(() => {});
+    await client.query(`
+      ALTER TABLE bookings ADD CONSTRAINT bookings_package_id_fkey
+      FOREIGN KEY (package_id) REFERENCES packages(id) ON DELETE SET NULL;
     `).catch(() => {});
     await client.query(`
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS travel_start_date DATE;
@@ -202,12 +222,30 @@ export async function initDb() {
         valid_until DATE,
         discount DECIMAL(12,2) DEFAULT 0,
         tax_percent DECIMAL(5,2) DEFAULT 0,
+        terms_text TEXT,
+        prepared_by VARCHAR(255),
         status VARCHAR(50) DEFAULT 'draft',
         total DECIMAL(12,2) DEFAULT 0,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    await client.query(`
+      ALTER TABLE quotations ALTER COLUMN package_id DROP NOT NULL;
+    `).catch(() => {});
+    await client.query(`
+      ALTER TABLE quotations DROP CONSTRAINT IF EXISTS quotations_package_id_fkey;
+    `).catch(() => {});
+    await client.query(`
+      ALTER TABLE quotations ADD CONSTRAINT quotations_package_id_fkey
+      FOREIGN KEY (package_id) REFERENCES packages(id) ON DELETE SET NULL;
+    `).catch(() => {});
+    await client.query(`
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS terms_text TEXT;
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS prepared_by VARCHAR(255);
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS terms_text TEXT;
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS company_gst VARCHAR(50);
+    `).catch(() => {});
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS quotation_items (
@@ -260,6 +298,8 @@ export async function initDb() {
         package_name VARCHAR(255),
         hotel_category VARCHAR(100),
         vehicle_type VARCHAR(100),
+        terms_text TEXT,
+        company_gst VARCHAR(50),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
@@ -312,6 +352,34 @@ export async function initDb() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS company_settings (
+        key VARCHAR(100) PRIMARY KEY,
+        value TEXT,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    // Seed default company settings if not present
+    const settingsSeed = [
+      ['company_name',    'Vision Travel Hub'],
+      ['company_address', '1234 Street, City, State, Zip Code'],
+      ['company_phone',   '123-123-1234'],
+      ['company_email',   'yourcompany@email.com'],
+      ['company_gst',     'GST Number'],
+      ['company_website', ''],
+      ['bank_name',       'Your Bank Name'],
+      ['bank_account',    '000000000000'],
+      ['bank_ifsc',       'BANK0000000'],
+      ['bank_upi',        'yourcompany@upi'],
+      ['bank_branch',     'Main Branch'],
+    ];
+    for (const [k, v] of settingsSeed) {
+      await client.query(
+        `INSERT INTO company_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,
+        [k, v]
+      ).catch(() => {});
+    }
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS activity_logs (

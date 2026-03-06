@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react';
 import { getVehicles, getCities, createVehicle, updateVehicle, deleteVehicle } from '../../../services/api';
 import Loading from '../../../components/Loading';
-import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import Modal from '../../../components/ui/Modal';
-import DataTable from '../../../components/DataTable';
 import { useToast } from '../../../context/ToastContext';
 
 export default function Vehicles() {
@@ -14,7 +12,7 @@ export default function Vehicles() {
   const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState({ open: false, data: null });
-  const [form, setForm] = useState({ name: '', type: '', capacity: '', city_id: '' });
+  const [form, setForm] = useState({ name: '', type: '', capacity: '', price: '', city_id: '' });
   const [saving, setSaving] = useState(false);
 
   const load = () => {
@@ -29,7 +27,7 @@ export default function Vehicles() {
   useEffect(() => { load(); }, []);
 
   const openAdd = () => {
-    setForm({ name: '', type: '', capacity: '', city_id: '' });
+    setForm({ name: '', type: '', capacity: '', price: '', city_id: '' });
     setModal({ open: true, data: null });
   };
   const openEdit = (row) => {
@@ -37,6 +35,7 @@ export default function Vehicles() {
       name: row.name || '',
       type: row.type || '',
       capacity: row.capacity ?? '',
+      price: row.price != null ? String(row.price) : '',
       city_id: row.city_id ?? '',
     });
     setModal({ open: true, data: row });
@@ -48,6 +47,7 @@ export default function Vehicles() {
     const payload = {
       ...form,
       capacity: form.capacity ? Number(form.capacity) : null,
+      price: form.price ? Number(form.price) : null,
       city_id: form.city_id ? Number(form.city_id) : null,
     };
     (modal.data ? updateVehicle(modal.data.id, payload) : createVehicle(payload))
@@ -69,31 +69,49 @@ export default function Vehicles() {
         <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Vehicles</h1>
         <Button onClick={openAdd}>+ Add Vehicle</Button>
       </div>
-      <Card>
-        {loading ? <Loading /> : (
-          <DataTable
-            columns={[
-              { key: 'name', label: 'Name' },
-              { key: 'type', label: 'Type' },
-              { key: 'capacity', label: 'Capacity' },
-              { key: 'city_id', label: 'City', render: (r) => getCityName(r.city_id) },
-            ]}
-            data={list}
-            emptyMessage="No vehicles. Add your first vehicle."
-            actions={(row) => (
-              <div className="flex justify-end gap-2">
-                <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>Edit</Button>
-                <Button size="sm" variant="danger" onClick={() => handleDelete(row)}>Delete</Button>
-              </div>
-            )}
-          />
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        {loading ? <Loading /> : list.length === 0 ? (
+          <div className="py-16 text-center text-slate-400 text-sm">No vehicles. Add your first vehicle.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px]">
+              <thead>
+                <tr className="bg-gradient-to-r from-teal-600 to-cyan-600 text-white">
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Name</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Type</th>
+                  <th className="text-center px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Capacity</th>
+                  <th className="text-right px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Price</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">City</th>
+                  <th className="text-right px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {list.map((row, i) => (
+                  <tr key={row.id || i} className="hover:bg-teal-50/40 transition-colors">
+                    <td className="px-5 py-3.5 text-sm font-semibold text-slate-800">{row.name || '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-600">{row.type || '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-center text-slate-600">{row.capacity ?? '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-right font-medium text-slate-800">{row.price != null ? `₹${Number(row.price).toLocaleString()}` : '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-600">{getCityName(row.city_id)}</td>
+                    <td className="px-5 py-3.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button onClick={() => openEdit(row)} className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition">Edit</button>
+                        <button onClick={() => handleDelete(row)} className="px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition">Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </Card>
+      </div>
       <Modal open={modal.open} onClose={() => setModal({ open: false, data: null })} title={modal.data ? 'Edit Vehicle' : 'Add Vehicle'}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input label="Name *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           <Input label="Type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} placeholder="e.g. SUV, Bus" />
           <Input label="Capacity" type="number" min="0" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} placeholder="Seats" />
+          <Input label="Price" type="number" min="0" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="Vehicle price" />
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">City</label>
             <select

@@ -9,6 +9,7 @@ import {
   addInvoicePayment,
   getCustomers,
   getBookings,
+  getPackages,
   getStaff,
   downloadInvoicePdf,
 } from '../../services/api';
@@ -18,7 +19,6 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
-import DataTable from '../../components/DataTable';
 import { useToast } from '../../context/ToastContext';
 
 const COMPANY = {
@@ -73,6 +73,7 @@ export default function Invoices() {
   const [paymentForm, setPaymentForm] = useState({ amount: '', mode: 'cash', reference: '' });
   const [customers, setCustomers] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [packages, setPackages] = useState([]);
   const [staff, setStaff] = useState([]);
   const [nextNumber, setNextNumber] = useState('');
   const [saving, setSaving] = useState(false);
@@ -81,6 +82,7 @@ export default function Invoices() {
     invoice_date: new Date().toISOString().slice(0, 10),
     due_date: '',
     booking_id: '',
+    package_id: '',
     customer_id: '',
     place_of_supply: '',
     billing_address: '',
@@ -100,6 +102,8 @@ export default function Invoices() {
     service_charges: '0',
     round_off: '0',
     status: 'draft',
+    terms_text: '',
+    company_gst: '',
     items: [emptyItem(), emptyItem()],
   });
 
@@ -111,6 +115,7 @@ export default function Invoices() {
   useEffect(() => {
     getCustomers({ limit: 500 }).then((r) => setCustomers(r.data?.data || r.data || [])).catch(() => {});
     getBookings({ limit: 200 }).then((r) => setBookings(r.data?.data || r.data || [])).catch(() => {});
+    getPackages().then((r) => setPackages(r.data || [])).catch(() => {});
     getStaff().then((r) => setStaff(r.data || [])).catch(() => {});
   }, []);
 
@@ -128,6 +133,7 @@ export default function Invoices() {
       invoice_date: today,
       due_date: due.toISOString().slice(0, 10),
       booking_id: '',
+      package_id: '',
       customer_id: '',
       place_of_supply: '',
       billing_address: '',
@@ -147,6 +153,8 @@ export default function Invoices() {
       service_charges: '0',
       round_off: '0',
       status: 'draft',
+      terms_text: '',
+      company_gst: '',
       items: [emptyItem(), emptyItem()],
     });
     setModal({ open: true });
@@ -162,6 +170,7 @@ export default function Invoices() {
           invoice_date: inv.invoice_date ? String(inv.invoice_date).slice(0, 10) : form.invoice_date,
           due_date: inv.due_date ? String(inv.due_date).slice(0, 10) : form.due_date,
           booking_id: inv.booking_id ? String(inv.booking_id) : '',
+          package_id: '',
           customer_id: inv.customer_id ? String(inv.customer_id) : '',
           place_of_supply: inv.place_of_supply || '',
           billing_address: inv.billing_address || '',
@@ -175,6 +184,8 @@ export default function Invoices() {
           package_name: inv.package_name || '',
           hotel_category: inv.hotel_category || '',
           vehicle_type: inv.vehicle_type || '',
+          terms_text: inv.terms_text || '',
+          company_gst: inv.company_gst || '',
           discount: String(inv.discount ?? 0),
           discount_type: inv.discount_type || 'flat',
           tax_percent: String(inv.tax_percent ?? 0),
@@ -205,6 +216,7 @@ export default function Invoices() {
     setForm((f) => ({
       ...f,
       booking_id: String(bk.id),
+      package_id: bk.package_id ? String(bk.package_id) : '',
       customer_id: String(bk.customer_id),
       travel_start_date: bk.travel_start_date ? String(bk.travel_start_date).slice(0, 10) : f.travel_start_date,
       travel_end_date: bk.travel_end_date ? String(bk.travel_end_date).slice(0, 10) : f.travel_end_date,
@@ -217,11 +229,33 @@ export default function Invoices() {
         billing_address: cust.address || f.billing_address,
       }));
     }
+    if (bk.package_id) onPackageSelect(String(bk.package_id));
   };
 
   const onCustomerSelect = (customerId) => {
     const cust = customers.find((c) => c.id === Number(customerId));
     if (cust) setForm((f) => ({ ...f, billing_address: cust.address || f.billing_address }));
+  };
+
+  const onPackageSelect = (packageId) => {
+    if (!packageId) return;
+    const pkg = packages.find((p) => p.id === Number(packageId));
+    if (!pkg) return;
+    const packagePrice = Number(pkg.price || 0);
+    const hotelPrice = Number(pkg.default_hotel_price || 0);
+    const vehiclePrice = Number(pkg.default_vehicle_price || 0);
+    setForm((f) => ({
+      ...f,
+      package_id: String(pkg.id),
+      package_name: pkg.name || pkg.title || f.package_name,
+      hotel_category: pkg.default_hotel_name || f.hotel_category,
+      vehicle_type: pkg.default_vehicle_name || f.vehicle_type,
+      items: [
+        { description: `Package: ${pkg.name || pkg.title || 'Package'}`, quantity: '1', rate: String(packagePrice), amount: String(packagePrice) },
+        { description: `Hotel: ${pkg.default_hotel_name || 'Default'}`, quantity: '1', rate: String(hotelPrice), amount: String(hotelPrice) },
+        { description: `Vehicle: ${pkg.default_vehicle_name || 'Default'}`, quantity: '1', rate: String(vehiclePrice), amount: String(vehiclePrice) },
+      ],
+    }));
   };
 
   const addItem = () => setForm((f) => ({ ...f, items: [...f.items, emptyItem()] }));
@@ -286,6 +320,8 @@ export default function Invoices() {
       package_name: form.package_name || null,
       hotel_category: form.hotel_category || null,
       vehicle_type: form.vehicle_type || null,
+      terms_text: form.terms_text || null,
+      company_gst: form.company_gst || null,
       items,
       created_by: form.sales_executive_id ? Number(form.sales_executive_id) : (user?.id || null),
     };
@@ -343,47 +379,61 @@ export default function Invoices() {
       .catch(() => toast('Failed', 'error'));
   };
 
-  const columns = [
-    { key: 'invoice_number', label: 'Invoice No' },
-    { key: 'customer_name', label: 'Customer' },
-    { key: 'booking_id', label: 'Booking', render: (r) => r.booking_id ? `#${r.booking_id}` : '-' },
-    { key: 'invoice_date', label: 'Date', render: (r) => r.invoice_date ? String(r.invoice_date).slice(0, 10) : '-' },
-    { key: 'due_date', label: 'Due', render: (r) => r.due_date ? String(r.due_date).slice(0, 10) : '-' },
-    { key: 'total', label: 'Total', render: (r) => `₹${Number(r.total || 0).toLocaleString()}` },
-    { key: 'paid_amount', label: 'Paid', render: (r) => `₹${Number(r.paid_amount || 0).toLocaleString()}` },
-    { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
-  ];
-
   return (
     <div className="min-w-0 px-3 sm:px-0 space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h1 className="text-xl sm:text-2xl font-bold text-slate-800 truncate">Invoices</h1>
         <Button onClick={openAdd} className="flex-shrink-0 w-full sm:w-auto">+ New Invoice</Button>
       </div>
-      <Card className="overflow-hidden">
+
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         {loading ? (
           <Loading />
+        ) : list.length === 0 ? (
+          <div className="py-16 text-center text-slate-400 text-sm">No invoices yet.</div>
         ) : (
-          <div className="overflow-x-auto -mx-3 sm:mx-0">
-            <DataTable
-              columns={columns}
-              data={list}
-              emptyMessage="No invoices yet."
-              actions={(row) => (
-                <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
-                  <Button size="sm" variant="ghost" onClick={() => openDetail(row)}>View</Button>
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>Edit</Button>
-                  <Button size="sm" variant="secondary" onClick={() => handleDownloadPdf(row.id)}>PDF</Button>
-                  {row.status !== 'paid' && row.status !== 'cancelled' && (
-                    <Button size="sm" variant="secondary" onClick={() => openRecordPayment(row)}>Pay</Button>
-                  )}
-                  <Button size="sm" variant="danger" onClick={() => handleDelete(row)}>Del</Button>
-                </div>
-              )}
-            />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px]">
+              <thead>
+                <tr className="bg-gradient-to-r from-teal-600 to-cyan-600 text-white">
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider rounded-tl-2xl">Invoice No</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Customer</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Date</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Due</th>
+                  <th className="text-right px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Total</th>
+                  <th className="text-right px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Paid</th>
+                  <th className="text-center px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Status</th>
+                  <th className="text-right px-5 py-3.5 text-xs font-semibold uppercase tracking-wider rounded-tr-2xl">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {list.map((row, i) => (
+                  <tr key={row.id || i} className="hover:bg-teal-50/40 transition-colors group">
+                    <td className="px-5 py-3.5 text-sm font-semibold text-teal-700">{row.invoice_number || '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-800 font-medium">{row.customer_name || '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-600">{row.invoice_date ? String(row.invoice_date).slice(0, 10) : '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-600">{row.due_date ? String(row.due_date).slice(0, 10) : '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-right font-semibold text-slate-800">₹{Number(row.total || 0).toLocaleString()}</td>
+                    <td className="px-5 py-3.5 text-sm text-right text-emerald-700 font-medium">₹{Number(row.paid_amount || 0).toLocaleString()}</td>
+                    <td className="px-5 py-3.5 text-center"><StatusBadge status={row.status} /></td>
+                    <td className="px-5 py-3.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button onClick={() => openDetail(row)} className="px-2.5 py-1 text-xs font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg transition">View</button>
+                        <button onClick={() => openEdit(row)} className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition">Edit</button>
+                        <button onClick={() => handleDownloadPdf(row.id)} className="px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition">PDF</button>
+                        {row.status !== 'paid' && row.status !== 'cancelled' && (
+                          <button onClick={() => openRecordPayment(row)} className="px-2.5 py-1 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition">Pay</button>
+                        )}
+                        <button onClick={() => handleDelete(row)} className="px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition">Del</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-      </Card>
+      </div>
 
       {/* Create/Edit Modal */}
       <Modal
@@ -406,6 +456,21 @@ export default function Invoices() {
                   <option value="">— None —</option>
                   {bookings.map((b) => (
                     <option key={b.id} value={b.id}>#{b.id} – {b.customer_name} – {b.package_name || '-'}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Package</label>
+                <select
+                  value={form.package_id}
+                  onChange={(e) => onPackageSelect(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">— Select —</option>
+                  {packages.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {(p.name || p.title)} — ₹{Number(p.price || 0).toLocaleString()}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -436,7 +501,8 @@ export default function Invoices() {
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Billing Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input label="Billing Address" value={form.billing_address} onChange={(e) => setForm({ ...form, billing_address: e.target.value })} />
-              <Input label="GST Number (if corporate)" value={form.customer_gst} onChange={(e) => setForm({ ...form, customer_gst: e.target.value })} />
+              <Input label="Customer GST Number" value={form.customer_gst} onChange={(e) => setForm({ ...form, customer_gst: e.target.value })} />
+              <Input label="Company GST No. (shown in PDF)" value={form.company_gst} onChange={(e) => setForm({ ...form, company_gst: e.target.value })} placeholder={COMPANY?.gst || 'GST Number'} />
             </div>
           </Card>
 
@@ -537,6 +603,18 @@ export default function Invoices() {
             </div>
           </Card>
 
+          <Card className="p-4">
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Terms &amp; Conditions</label>
+            <p className="text-xs text-slate-400 mb-2">Each line will become a numbered point in the PDF.</p>
+            <textarea
+              rows={4}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+              placeholder={"50% advance required.\nCancellation as per policy.\nFinal payment before travel."}
+              value={form.terms_text}
+              onChange={(e) => setForm({ ...form, terms_text: e.target.value })}
+            />
+          </Card>
+
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setModal({ open: false })}>Cancel</Button>
             <Button type="submit" disabled={saving}>{saving ? 'Saving...' : (editingId ? 'Save Changes' : 'Create Invoice')}</Button>
@@ -558,7 +636,6 @@ export default function Invoices() {
                 <p><span className="text-slate-500">Invoice No:</span> {detail.invoice_number}</p>
                 <p><span className="text-slate-500">Date:</span> {detail.invoice_date ? String(detail.invoice_date).slice(0, 10) : '-'}</p>
                 <p><span className="text-slate-500">Due:</span> {detail.due_date ? String(detail.due_date).slice(0, 10) : '-'}</p>
-                <p><span className="text-slate-500">Booking:</span> {detail.booking_id ? `#${detail.booking_id}` : '-'}</p>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">

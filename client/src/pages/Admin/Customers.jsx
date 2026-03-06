@@ -13,7 +13,6 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
-import DataTable from '../../components/DataTable';
 import { useToast } from '../../context/ToastContext';
 
 const emptyCustomer = { name: '', mobile: '', email: '', address: '', passport: '', family_count: 0, notes: '' };
@@ -107,13 +106,6 @@ export default function Customers() {
       .catch(() => toast('Failed', 'error'));
   };
 
-  const columns = [
-    { key: 'name', label: 'Name' },
-    { key: 'email', label: 'Email' },
-    { key: 'mobile', label: 'Mobile' },
-    { key: 'family_count', label: 'Family' },
-  ];
-
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
@@ -121,31 +113,49 @@ export default function Customers() {
         <Button onClick={openAdd}>+ Add Customer</Button>
       </div>
 
-      <Card>
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="px-5 pt-4 pb-3 border-b border-slate-100">
           <input
             type="search"
             placeholder="Search by name, email, mobile..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            className="w-full sm:w-72 rounded-xl border border-slate-200 px-4 py-2 text-sm focus:ring-2 focus:ring-teal-400 focus:border-teal-400 outline-none"
           />
         </div>
-        {loading ? (
-          <Loading />
+        {loading ? <Loading /> : list.data.length === 0 ? (
+          <div className="py-16 text-center text-slate-400 text-sm">No customers yet. Add your first customer.</div>
         ) : (
-          <DataTable
-            columns={columns}
-            data={list.data}
-            emptyMessage="No customers yet. Add your first customer."
-            actions={(row) => (
-              <div className="flex items-center justify-end gap-2">
-                <Button size="sm" variant="ghost" onClick={() => openDetail(row)}>View</Button>
-                <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>Edit</Button>
-                <Button size="sm" variant="danger" onClick={() => handleDelete(row)}>Delete</Button>
-              </div>
-            )}
-          />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px]">
+              <thead>
+                <tr className="bg-gradient-to-r from-teal-600 to-cyan-600 text-white">
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Name</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Email</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Mobile</th>
+                  <th className="text-center px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Family</th>
+                  <th className="text-right px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {list.data.map((row, i) => (
+                  <tr key={row.id || i} className="hover:bg-teal-50/40 transition-colors">
+                    <td className="px-5 py-3.5 text-sm font-semibold text-slate-800">{row.name || '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-600">{row.email || '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-600">{row.mobile || '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-center text-slate-600">{row.family_count ?? 0}</td>
+                    <td className="px-5 py-3.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button onClick={() => openDetail(row)} className="px-2.5 py-1 text-xs font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg transition">View</button>
+                        <button onClick={() => openEdit(row)} className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition">Edit</button>
+                        <button onClick={() => handleDelete(row)} className="px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition">Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         {list.total > 10 && (
           <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100">
@@ -156,7 +166,7 @@ export default function Customers() {
             </div>
           </div>
         )}
-      </Card>
+      </div>
 
       {/* Add/Edit Modal */}
       <Modal open={modal.open} onClose={() => setModal({ open: false, mode: 'add', data: null })} title={modal.mode === 'add' ? 'Add Customer' : 'Edit Customer'} size="lg">

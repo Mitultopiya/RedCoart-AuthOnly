@@ -10,6 +10,7 @@ router.get('/', c.list);
 router.post('/', c.create);
 router.put('/:id', c.update);
 router.patch('/:id/block', c.toggleBlock);
+router.patch('/:id/reset-password', c.resetPassword);
 router.get('/:id/performance', c.performance);
 router.delete('/:id', c.remove);
 

@@ -3,7 +3,7 @@ import pool from '../config/db.js';
 const tableColumns = {
   cities: ['name', 'country'],
   hotels: ['name', 'city_id', 'address', 'contact', 'room_type', 'price'],
-  vehicles: ['name', 'type', 'capacity', 'city_id'],
+  vehicles: ['name', 'type', 'capacity', 'price', 'city_id'],
   activities: ['name', 'description', 'city_id', 'image_url'],
 };
 

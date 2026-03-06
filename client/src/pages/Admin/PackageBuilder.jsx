@@ -6,6 +6,8 @@ import {
   updatePackage,
   savePackageDays,
   getHotels,
+  getCities,
+  getVehicles,
   uploadPackageFile,
   uploadBaseUrl,
 } from '../../services/api';
@@ -29,10 +31,21 @@ export default function PackageBuilder() {
   const { toast } = useToast();
   const isEdit = !!id;
   const [loading, setLoading] = useState(isEdit);
-  const [form, setForm] = useState({ name: '', description: '', price: '', duration_days: '1' });
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    price: '',
+    duration_days: '1',
+    city_ids: [],
+    default_hotel_id: '',
+    default_vehicle_id: '',
+  });
   const [imageUrls, setImageUrls] = useState([]);
   const [days, setDays] = useState([]);
+  const [cities, setCities] = useState([]);
   const [hotels, setHotels] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
+  const [cityToAdd, setCityToAdd] = useState('');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const imageInputRef = useRef(null);
@@ -47,6 +60,9 @@ export default function PackageBuilder() {
             description: d.description || '',
             price: d.price ?? '',
             duration_days: String(d.duration_days ?? d.days ?? 1),
+            city_ids: Array.isArray(d.city_ids) ? d.city_ids.map((x) => Number(x)).filter(Boolean) : [],
+            default_hotel_id: d.default_hotel_id ? String(d.default_hotel_id) : '',
+            default_vehicle_id: d.default_vehicle_id ? String(d.default_vehicle_id) : '',
           });
           setImageUrls(Array.isArray(d.image_urls) ? [...d.image_urls] : []);
           setDays(
@@ -58,7 +74,9 @@ export default function PackageBuilder() {
         .catch(() => toast('Failed to load package', 'error'))
         .finally(() => setLoading(false));
     }
+    getCities().then((r) => setCities(r.data || [])).catch(() => {});
     getHotels().then((r) => setHotels(r.data || [])).catch(() => {});
+    getVehicles().then((r) => setVehicles(r.data || [])).catch(() => {});
   }, [id, isEdit, toast]);
 
   const handleSubmit = (e) => {
@@ -69,7 +87,10 @@ export default function PackageBuilder() {
       description: form.description,
       price: Number(form.price),
       duration_days: Number(form.duration_days) || 1,
+      city_ids: Array.isArray(form.city_ids) ? form.city_ids.map((x) => Number(x)).filter(Boolean) : [],
       image_urls: imageUrls,
+      default_hotel_id: form.default_hotel_id ? Number(form.default_hotel_id) : null,
+      default_vehicle_id: form.default_vehicle_id ? Number(form.default_vehicle_id) : null,
     };
     (isEdit ? updatePackage(id, payload) : createPackage(payload))
       .then((r) => {
@@ -116,6 +137,18 @@ export default function PackageBuilder() {
   };
 
   const removeImage = (index) => setImageUrls((prev) => prev.filter((_, i) => i !== index));
+  const addCity = () => {
+    if (!cityToAdd) return;
+    const cityId = Number(cityToAdd);
+    setForm((prev) => {
+      const next = Array.isArray(prev.city_ids) ? [...prev.city_ids] : [];
+      if (!next.includes(cityId)) next.push(cityId);
+      return { ...prev, city_ids: next };
+    });
+    setCityToAdd('');
+  };
+  const removeCity = (cityId) =>
+    setForm((prev) => ({ ...prev, city_ids: (prev.city_ids || []).filter((id) => Number(id) !== Number(cityId)) }));
 
   const addDay = () =>
     setDays((d) => [...d, { day_number: d.length + 1, activities: '', hotel_id: null, meals: '', transport: '', notes: '' }]);
@@ -173,6 +206,73 @@ export default function PackageBuilder() {
                 value={form.duration_days}
                 onChange={(e) => setForm({ ...form, duration_days: e.target.value })}
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Cities</label>
+              <div className="flex gap-2">
+                <select
+                  value={cityToAdd}
+                  onChange={(e) => setCityToAdd(e.target.value)}
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">— Select city —</option>
+                  {cities.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <Button type="button" variant="secondary" onClick={addCity}>
+                  Add
+                </Button>
+              </div>
+              {!!form.city_ids?.length && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {form.city_ids.map((cid) => {
+                    const city = cities.find((c) => Number(c.id) === Number(cid));
+                    return (
+                      <span key={cid} className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
+                        {city?.name || `City #${cid}`}
+                        <button type="button" onClick={() => removeCity(cid)} className="text-slate-500 hover:text-red-600">
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Default Hotel</label>
+                <select
+                  value={form.default_hotel_id}
+                  onChange={(e) => setForm({ ...form, default_hotel_id: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">— None —</option>
+                  {hotels.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Default Vehicle</label>
+                <select
+                  value={form.default_vehicle_id}
+                  onChange={(e) => setForm({ ...form, default_vehicle_id: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">— None —</option>
+                  {vehicles.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="flex gap-2 pt-2">
               <Button type="submit" disabled={saving}>

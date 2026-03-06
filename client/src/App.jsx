@@ -15,6 +15,7 @@ import AdminInvoices from './pages/Admin/Invoices';
 import AdminPaymentSlips from './pages/Admin/PaymentSlips';
 import AdminReports from './pages/Admin/Reports';
 import AdminStaff from './pages/Admin/Staff';
+import AdminSettings from './pages/Admin/Settings';
 import AdminCities from './pages/Admin/Masters/Cities';
 import AdminHotels from './pages/Admin/Masters/Hotels';
 import AdminVehicles from './pages/Admin/Masters/Vehicles';
@@ -64,6 +65,7 @@ function App() {
         <Route path="masters/hotels" element={<AdminHotels />} />
         <Route path="masters/vehicles" element={<AdminVehicles />} />
         <Route path="masters/activities" element={<AdminActivities />} />
+        <Route path="settings" element={<AdminSettings />} />
       </Route>
 
       <Route path="/staff" element={<ProtectedRoute allowRoles={['staff']}><StaffLayout /></ProtectedRoute>}>

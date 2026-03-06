@@ -10,5 +10,6 @@ router.get('/dashboard', c.dashboard);
 router.get('/revenue', c.revenueReport);
 router.get('/pending-payments', c.pendingPayments);
 router.get('/staff-performance', c.staffPerformance);
+router.get('/payment-modes', c.pendingPayments);
 
 export default router;

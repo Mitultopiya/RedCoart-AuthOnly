@@ -10,5 +10,6 @@ router.get('/itinerary/:id', c.itinerary);
 router.get('/invoice/:id', c.invoice);
 router.get('/invoice-doc/:id', c.invoiceDocPdf);
 router.get('/quotation/:id', c.quotationPdf);
+router.get('/payment-slip/:id', c.paymentSlipPdf);
 
 export default router;

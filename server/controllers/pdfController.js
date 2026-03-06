@@ -1,5 +1,5 @@
 import pool from '../config/db.js';
-import { generateItineraryPDF, generateInvoicePDF, generateQuotationPDF, generateInvoiceDocPDF } from '../services/pdfService.js';
+import { generateItineraryPDF, generateInvoicePDF, generateQuotationPDF, generateInvoiceDocPDF, generatePaymentSlipPDF } from '../services/pdfService.js';
 
 export const itinerary = async (req, res) => {
   try {
@@ -42,12 +42,39 @@ export const invoiceDocPdf = async (req, res) => {
     if (inv.rows.length === 0) return res.status(404).json({ message: 'Invoice not found.' });
     const customer = await pool.query('SELECT * FROM customers WHERE id = $1', [inv.rows[0].customer_id]);
     const items = await pool.query('SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY id', [id]);
-    const buf = await generateInvoiceDocPDF(inv.rows[0], customer.rows[0] || {}, items.rows);
+    const payments = await pool.query('SELECT * FROM invoice_payments WHERE invoice_id = $1 ORDER BY paid_at', [id]);
+    const buf = await generateInvoiceDocPDF(inv.rows[0], customer.rows[0] || {}, items.rows, payments.rows);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=invoice-${inv.rows[0].invoice_number || id}.pdf`);
+    const fileName = (inv.rows[0].invoice_number || `INV-${id}`).replace(/[^\w.-]/g, '_');
+    res.setHeader('Content-Disposition', `attachment; filename=${fileName}.pdf`);
     res.send(buf);
   } catch (err) {
     console.error('Invoice doc PDF error:', err?.message || err);
+    if (err?.stack) console.error(err.stack);
+    res.status(500).json({ message: 'Server error.', error: process.env.NODE_ENV !== 'production' ? (err?.message || String(err)) : undefined });
+  }
+};
+
+export const paymentSlipPdf = async (req, res) => {
+  try {
+    const { id } = req.params; // invoice_payment id
+    const result = await pool.query(
+      `SELECT ip.*, i.invoice_number, i.total as invoice_total, i.company_gst,
+              i.customer_gst, i.place_of_supply,
+              c.name as customer_name, c.mobile as customer_mobile, c.email as customer_email
+       FROM invoice_payments ip
+       JOIN invoices i ON ip.invoice_id = i.id
+       LEFT JOIN customers c ON i.customer_id = c.id
+       WHERE ip.id = $1`,
+      [id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Payment not found.' });
+    const buf = await generatePaymentSlipPDF(result.rows[0]);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=payment-receipt-${id}.pdf`);
+    res.send(buf);
+  } catch (err) {
+    console.error('Payment slip PDF error:', err?.message || err);
     if (err?.stack) console.error(err.stack);
     res.status(500).json({ message: 'Server error.', error: process.env.NODE_ENV !== 'production' ? (err?.message || String(err)) : undefined });
   }
@@ -64,7 +91,8 @@ export const quotationPdf = async (req, res) => {
     const customerRow = customer.rows[0] || {};
     const buf = await generateQuotationPDF(q.rows[0], customerRow, items.rows, pkg.rows[0]?.name);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=quotation-${id}.pdf`);
+    const fileNo = String(Number(q.rows[0]?.id || 0)).padStart(6, '0');
+    res.setHeader('Content-Disposition', `attachment; filename=PRO-${fileNo}.pdf`);
     res.send(buf);
   } catch (err) {
     console.error('Quotation PDF error:', err?.message || err);

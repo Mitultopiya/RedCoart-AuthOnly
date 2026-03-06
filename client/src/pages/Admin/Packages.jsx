@@ -21,7 +21,9 @@ export default function Packages() {
 
   const handleDelete = (row) => {
     if (!window.confirm(`Delete package "${row.name || row.title}"?`)) return;
-    deletePackage(row.id).then(() => { toast('Package deleted'); load(); }).catch(() => toast('Delete failed', 'error'));
+    deletePackage(row.id)
+      .then(() => { toast('Package deleted'); load(); })
+      .catch((err) => toast(err.response?.data?.message || 'Delete failed', 'error'));
   };
 
   const columns = [

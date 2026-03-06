@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react';
 import { getActivities, getCities, createActivity, updateActivity, deleteActivity, uploadMastersFile, uploadBaseUrl } from '../../../services/api';
 import Loading from '../../../components/Loading';
-import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import Modal from '../../../components/ui/Modal';
-import DataTable from '../../../components/DataTable';
 import FileUpload from '../../../components/FileUpload';
 import { useToast } from '../../../context/ToastContext';
 
@@ -67,26 +65,45 @@ export default function Activities() {
         <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Activities</h1>
         <Button onClick={openAdd}>+ Add Activity</Button>
       </div>
-      <Card>
-        {loading ? <Loading /> : (
-          <DataTable
-            columns={[
-              { key: 'name', label: 'Name' },
-              { key: 'description', label: 'Description' },
-              { key: 'city_id', label: 'City', render: (r) => getCityName(r.city_id) },
-              { key: 'image_url', label: 'Image', render: (r) => r.image_url ? <img src={(uploadBaseUrl || '') + r.image_url} alt="" className="h-8 w-8 object-cover rounded" /> : '-' },
-            ]}
-            data={list}
-            emptyMessage="No activities. Add your first activity."
-            actions={(row) => (
-              <div className="flex justify-end gap-2">
-                <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>Edit</Button>
-                <Button size="sm" variant="danger" onClick={() => handleDelete(row)}>Delete</Button>
-              </div>
-            )}
-          />
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        {loading ? <Loading /> : list.length === 0 ? (
+          <div className="py-16 text-center text-slate-400 text-sm">No activities. Add your first activity.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[520px]">
+              <thead>
+                <tr className="bg-gradient-to-r from-teal-600 to-cyan-600 text-white">
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Image</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Name</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Description</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">City</th>
+                  <th className="text-right px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {list.map((row, i) => (
+                  <tr key={row.id || i} className="hover:bg-teal-50/40 transition-colors">
+                    <td className="px-5 py-3">
+                      {row.image_url
+                        ? <img src={(uploadBaseUrl || '') + row.image_url} alt="" className="h-10 w-10 object-cover rounded-lg border border-slate-200" />
+                        : <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 text-xs">No img</div>}
+                    </td>
+                    <td className="px-5 py-3.5 text-sm font-semibold text-slate-800">{row.name || '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-500 max-w-[200px] truncate">{row.description || '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-600">{getCityName(row.city_id)}</td>
+                    <td className="px-5 py-3.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button onClick={() => openEdit(row)} className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition">Edit</button>
+                        <button onClick={() => handleDelete(row)} className="px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition">Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </Card>
+      </div>
       <Modal open={modal.open} onClose={() => setModal({ open: false, data: null })} title={modal.data ? 'Edit Activity' : 'Add Activity'} size="lg">
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input label="Name *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />

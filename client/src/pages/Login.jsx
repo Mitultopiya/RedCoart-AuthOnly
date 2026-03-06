@@ -63,7 +63,7 @@ export default function Login() {
         {/* Right – Form (white, brand colours on controls) */}
         <div className="w-full lg:w-[50%] flex flex-col justify-center p-8 sm:p-10 lg:p-14 bg-white">
           <h1 className="text-slate-900 font-bold text-2xl sm:text-3xl tracking-tight mb-1">
-            Sign in
+            Login
           </h1>
           <p className="text-slate-500 text-sm mb-8">Use your credentials to access the dashboard.</p>
 
@@ -107,7 +107,7 @@ export default function Login() {
               disabled={loading}
               className="w-full py-4 rounded-xl font-semibold text-sm text-white tracking-wide shadow-lg shadow-primary-500/25 hover:shadow-xl hover:shadow-primary-500/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed bg-gradient-to-r from-blue-600 via-primary-500 to-primary-600 hover:from-blue-700 hover:via-primary-600 hover:to-primary-700"
             >
-              {loading ? 'Signing in...' : 'Sign in'}
+              {loading ? 'Logging in...' : 'Login'}
             </button>
           </form>
 
