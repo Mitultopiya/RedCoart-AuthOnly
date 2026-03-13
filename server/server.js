@@ -22,6 +22,7 @@ import staffRoutes from './routes/staffRoutes.js';
 import reportsRoutes from './routes/reportsRoutes.js';
 import pdfRoutes from './routes/pdfRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
+import branchesRoutes from './routes/branchesRoutes.js';
 import { verifyToken, adminOrManager } from './middleware/auth.js';
 import { uploadImages } from './middleware/upload.js';
 import * as packagesController from './controllers/packagesController.js';
@@ -29,8 +30,12 @@ import * as packagesController from './controllers/packagesController.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.join(__dirname, 'uploads');
 const packagesUploadDir = path.join(uploadsDir, 'packages');
+const paymentUploadDir = path.join(uploadsDir, 'payment');
 if (!fs.existsSync(packagesUploadDir)) {
   fs.mkdirSync(packagesUploadDir, { recursive: true });
+}
+if (!fs.existsSync(paymentUploadDir)) {
+  fs.mkdirSync(paymentUploadDir, { recursive: true });
 }
 
 dotenv.config();
@@ -83,6 +88,7 @@ app.use('/api/staff', staffRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/pdf', pdfRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/branches', branchesRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

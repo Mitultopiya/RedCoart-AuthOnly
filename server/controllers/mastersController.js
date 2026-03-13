@@ -9,7 +9,14 @@ const tableColumns = {
 
 async function list(req, res, table) {
   try {
-    const result = await pool.query(`SELECT * FROM ${table} ORDER BY id`);
+    const branchId = req.query.branch_id ? parseInt(req.query.branch_id, 10) : (req.branchId ?? null);
+    let where = '';
+    const params = [];
+    if (branchId) {
+      where = 'WHERE branch_id = $1';
+      params.push(branchId);
+    }
+    const result = await pool.query(`SELECT * FROM ${table} ${where} ORDER BY id`, params);
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -19,9 +26,11 @@ async function list(req, res, table) {
 
 async function create(req, res, table) {
   try {
-    const cols = tableColumns[table];
+    const baseCols = tableColumns[table];
+    const cols = [...baseCols, 'branch_id'];
     const body = req.body;
-    const values = cols.map((c) => body[c] ?? null);
+    const bid = body.branch_id ?? req.branchId ?? null;
+    const values = cols.map((c) => (c === 'branch_id' ? bid : (body[c] ?? null)));
     const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
     const result = await pool.query(
       `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) RETURNING *`,

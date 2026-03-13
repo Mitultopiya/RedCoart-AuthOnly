@@ -30,4 +30,13 @@ export const requireRoles = (...allowedRoles) => (req, res, next) => {
 
 export const adminOnly = requireRoles('admin');
 export const adminOrManager = requireRoles('admin', 'manager');
-export const anyAuth = requireRoles('admin', 'manager', 'staff');
+export const superAdminOrAdmin = requireRoles('super_admin', 'admin');
+export const anyAuth = requireRoles('admin', 'manager', 'staff', 'super_admin', 'branch_admin');
+
+/** Branch scoping: if user has a branch_id (e.g. branch_admin or admin tied to a branch), use it as default branch filter. */
+export const branchScope = (req, res, next) => {
+  if (req.user?.branch_id) {
+    req.branchId = req.user.branch_id;
+  }
+  next();
+};

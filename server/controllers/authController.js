@@ -15,7 +15,7 @@ export const login = async (req, res) => {
     }
 
     const result = await pool.query(
-      'SELECT id, name, email, password, role, is_blocked FROM users WHERE email = $1',
+      'SELECT id, name, email, password, role, is_blocked, branch_id FROM users WHERE email = $1',
       [email]
     );
 
@@ -33,7 +33,7 @@ export const login = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, branch_id: user.branch_id ?? null },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -45,6 +45,7 @@ export const login = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        branch_id: user.branch_id ?? null,
       },
     });
   } catch (err) {

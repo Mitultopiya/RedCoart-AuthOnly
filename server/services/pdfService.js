@@ -22,14 +22,34 @@ async function getCompanySettings() {
       accountNumber: s.bank_account || '',
       ifsc:    s.bank_ifsc       || '',
       upi:     s.bank_upi        || '',
+      upiName: s.upi_name        || '',
+      upiQrPath: s.upi_qr_path   || '',
       bankBranch: s.bank_branch  || '',
     };
   } catch (_) {
     return {
       name: 'Vision Travel Hub', address: '1234 Street, City, State, Zip Code',
       phone: '123-123-1234', email: 'yourcompany@email.com', gst: '',
-      bankName: '', accountNumber: '', ifsc: '', upi: '', bankBranch: '',
+      bankName: '', accountNumber: '', ifsc: '', upi: '', upiName: '', upiQrPath: '', bankBranch: '',
     };
+  }
+}
+
+/** Load UPI QR image from uploads/payment/ if upiQrPath is set; returns embedded image or null */
+async function loadUpiQrImage(doc, upiQrPath) {
+  if (!upiQrPath || typeof upiQrPath !== 'string') return null;
+  const filename = path.basename(upiQrPath.replace(/^\/+/, '').replace(/^uploads\/payment\/?/, ''));
+  if (!filename) return null;
+  const baseDir = path.join(__dirname, '..');
+  const filePath = path.join(baseDir, 'uploads', 'payment', filename);
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const buf = fs.readFileSync(filePath);
+    const ext = (path.extname(filename) || '').toLowerCase();
+    if (ext === '.png') return await doc.embedPng(buf);
+    return await doc.embedJpg(buf);
+  } catch (_) {
+    return null;
   }
 }
 
@@ -167,8 +187,9 @@ export async function generateItineraryPDF(packageData, days) {
   page.drawText('Duration:', { x: left + 12, y: boxTop - 40, size: 10, font, color: textDark });
   page.drawText(String(duration) + ' days', { x: left + 80, y: boxTop - 40, size: 10, font: fontBold, color: textDark });
 
-  page.drawText('Total price (package + hotel + vehicle):', { x: left + 12, y: boxTop - 60, size: 9.5, font, color: textDark });
-  page.drawText(price, { x: left + 12, y: boxTop - 76, size: 11, font: fontBold, color: textDark });
+  page.drawText('Total price :', { x: left + 12, y: boxTop - 70, size: 11, font, color: textDark });
+  page.drawText(price, { x: left + 80, y: boxTop - 70, size: 11, font: fontBold, color: textDark });
+
 
   // Package hero image on the right half of info box if available
   if (pkgImage) {
@@ -459,22 +480,27 @@ export async function generateQuotationPDF(quotation, customer, items = [], pack
   const customerMobile = asciiOnly(customer.mobile || '-');
   const addressText = asciiOnly(customer.address || '-');
   const addressLines = addressText.match(/.{1,48}(\s|$)/g) || [addressText];
+  const familyCount = Number(quotation.family_count ?? customer.family_count ?? 1) || 1;
 
   page.drawText('Name: ' + customerName, { x: left + 6, y: custTop - 39, size: 10, font: fontBold, color: textDark });
   page.drawText('Address: ' + (addressLines[0] || '-').trim(), { x: left + 6, y: custTop - 55, size: 10, font: fontBold, color: textDark });
   page.drawText('Email: ' + customerEmail, { x: left + 6, y: custTop - 71, size: 10, font: fontBold, color: textDark });
   page.drawText('Phone: ' + customerMobile, { x: left + (right - left) / 2 + 6, y: custTop - 71, size: 10, font: fontBold, color: textDark });
+  page.drawText('No. of Persons: ' + String(familyCount), { x: left + (right - left) / 2 + 6, y: custTop - 55, size: 10, font: fontBold, color: textDark });
 
-  // Item table: header + fixed rows like template
+  // Item table: only show rows with non-zero amount (exclude Rs.0.00 rows)
+  const displayItems = items.filter((it) => Number(it?.amount || 0) !== 0);
+  const rowCount = Math.max(1, displayItems.length);
+  const headerH = 26;
+  const rowH = 28;
+  const tableHeight = headerH + rowCount * rowH;
   const tableTop = custTop - custHeight - 14;
-  const tableHeight = 214;
   const tableBottom = tableTop - tableHeight;
   page.drawRectangle({ x: left, y: tableBottom, width: right - left, height: tableHeight, borderColor: boxBorder, borderWidth: 1 });
 
   const colItem = left + 314;
   const colRate = left + 398;
   const colQty = left + 435;
-  const headerH = 26;
   page.drawLine({ start: { x: left, y: tableTop - headerH }, end: { x: right, y: tableTop - headerH }, thickness: 1, color: boxBorder });
   page.drawLine({ start: { x: colItem, y: tableTop }, end: { x: colItem, y: tableBottom }, thickness: 1, color: boxBorder });
   page.drawLine({ start: { x: colRate, y: tableTop }, end: { x: colRate, y: tableBottom }, thickness: 1, color: boxBorder });
@@ -485,23 +511,18 @@ export async function generateQuotationPDF(quotation, customer, items = [], pack
   page.drawText('Qty', { x: colRate + 8, y: tableTop - 18, size: 11, font: fontBold, color: textDark });
   page.drawText('Total', { x: colQty + 24, y: tableTop - 18, size: 11, font: fontBold, color: textDark });
 
-  const rowCount = 7;
   const bodyTop = tableTop - headerH;
-  const rowH = (tableHeight - headerH) / rowCount;
   for (let i = 1; i < rowCount; i++) {
     const yy = bodyTop - i * rowH;
     page.drawLine({ start: { x: left, y: yy }, end: { x: right, y: yy }, thickness: 1, color: boxBorder });
   }
 
   for (let i = 0; i < rowCount; i++) {
-    const it = items[i];
+    const it = displayItems[i];
     const yRow = bodyTop - i * rowH - 15;
     const rateRight = colRate - 6;
     const totalRight = right - 6;
-    if (!it) {
-      drawRight(pdfAmount(0), totalRight, yRow, 9.5, font);
-      continue;
-    }
+    if (!it) continue;
     const amt = Number(it.amount || 0);
     const desc = asciiOnly(it.description || '-').substring(0, 55);
     page.drawText(desc, { x: left + 6, y: yRow, size: 9.5, font: font, color: textDark });
@@ -587,6 +608,37 @@ export async function generateQuotationPDF(quotation, customer, items = [], pack
     const [label, val] = summaryRows[i];
     page.drawText(label, { x: summaryX + 10, y: yy, size: 11, font: fontBold, color: textDark });
     drawRight(val, right - 8, yy, 11, fontBold);
+  }
+
+  // Bank Details + UPI/QR on quotation PDF
+  const bankTop = sumTop - sumH - 18;
+  const bankH = 66;
+  page.drawRectangle({ x: left, y: bankTop - bankH, width: right - left, height: bankH, borderColor: boxBorder, borderWidth: 1 });
+  page.drawLine({ start: { x: left, y: bankTop - 20 }, end: { x: right, y: bankTop - 20 }, thickness: 1, color: boxBorder });
+  page.drawText('Bank Details', { x: left + (right - left) / 2 - 30, y: bankTop - 13, size: 11, font: fontBold, color: textDark });
+  page.drawText('Bank: ' + asciiOnly(COMPANY_PDF.bankName), { x: left + 6, y: bankTop - 34, size: 10, font, color: textDark });
+  page.drawText('Account No.: ' + asciiOnly(COMPANY_PDF.accountNumber), { x: left + 6, y: bankTop - 50, size: 10, font, color: textDark });
+  page.drawText('IFSC: ' + asciiOnly(COMPANY_PDF.ifsc), { x: left + (right - left) / 2 + 6, y: bankTop - 34, size: 10, font, color: textDark });
+  page.drawText('UPI: ' + asciiOnly(COMPANY_PDF.upi), { x: left + (right - left) / 2 + 6, y: bankTop - 50, size: 10, font, color: textDark });
+
+  const upiQrImage = await loadUpiQrImage(doc, COMPANY_PDF.upiQrPath);
+  const upiSectionH = 72;
+  const upiTop = bankTop - bankH - 14;
+  if (COMPANY_PDF.upi || COMPANY_PDF.upiName || upiQrImage) {
+    page.drawRectangle({ x: left, y: upiTop - upiSectionH, width: right - left, height: upiSectionH, borderColor: boxBorder, borderWidth: 1 });
+    page.drawText('UPI Payment', { x: left + (right - left) / 2 - 32, y: upiTop - 12, size: 11, font: fontBold, color: textDark });
+    const qrSize = 56;
+    const qrX = right - qrSize - 10;
+    const qrY = upiTop - upiSectionH + 8;
+    if (upiQrImage) {
+      const scale = Math.min(qrSize / upiQrImage.width, qrSize / upiQrImage.height);
+      page.drawImage(upiQrImage, { x: qrX, y: qrY, width: upiQrImage.width * scale, height: upiQrImage.height * scale });
+    }
+    const upiName = asciiOnly(COMPANY_PDF.upiName || COMPANY_PDF.name || '');
+    const upiId = asciiOnly(COMPANY_PDF.upi || '');
+    if (upiName) page.drawText(upiName, { x: left + 6, y: upiTop - 32, size: 10, font: fontBold, color: textDark });
+    if (upiId) page.drawText('UPI ID: ' + upiId, { x: left + 6, y: upiTop - 48, size: 9.5, font, color: textDark });
+    page.drawText('Scan this QR code using any UPI app to make payment.', { x: left + 6, y: upiTop - 62, size: 8, font, color: textDark });
   }
 
   const pdfBytes = await doc.save();
@@ -846,17 +898,103 @@ export async function generateInvoiceDocPDF(invoice, customer = {}, items = [], 
     drawRight(val, right - 8, yy, 11, fontBold);
   }
 
-  // Bank Details box
-  const bankTop = sumTop - sumH - 18;
-  const bankH = 66;
-  page.drawRectangle({ x: left, y: bankTop - bankH, width: right - left, height: bankH, borderColor: boxBorder, borderWidth: 1 });
-  page.drawLine({ start: { x: left, y: bankTop - 20 }, end: { x: right, y: bankTop - 20 }, thickness: 1, color: boxBorder });
-  page.drawText('Bank Details', { x: left + (right - left) / 2 - 30, y: bankTop - 13, size: 11, font: fontBold, color: textDark });
-  page.drawText('Bank: ' + asciiOnly(BANK_PDF.bankName), { x: left + 6, y: bankTop - 34, size: 10, font, color: textDark });
-  page.drawText('Account No.: ' + asciiOnly(BANK_PDF.accountNumber), { x: left + 6, y: bankTop - 50, size: 10, font, color: textDark });
-  page.drawText('IFSC: ' + asciiOnly(BANK_PDF.ifsc), { x: left + (right - left) / 2 + 6, y: bankTop - 34, size: 10, font, color: textDark });
-  page.drawText('UPI: ' + asciiOnly(BANK_PDF.upi), { x: left + (right - left) / 2 + 6, y: bankTop - 50, size: 10, font, color: textDark });
+  // Combined Bank + UPI box (one clean section, no overflow)
+  const payTop = sumTop - sumH - 18;
+  const payH = 130;
+  const payBottom = payTop - payH;
+  page.drawRectangle({
+    x: left,
+    y: payBottom,
+    width: right - left,
+    height: payH,
+    borderColor: boxBorder,
+    borderWidth: 1,
+  });
+  // Header line
+  page.drawLine({
+    start: { x: left, y: payTop - 20 },
+    end: { x: right, y: payTop - 20 },
+    thickness: 1,
+    color: boxBorder,
+  });
+  page.drawText('Bank & UPI Details', {
+    x: left + 10,
+    y: payTop - 13,
+    size: 11,
+    font: fontBold,
+    color: textDark,
+  });
 
+  // Vertical split: left for text, right for QR
+  const midX = left + (right - left) * 0.55;
+  page.drawLine({
+    start: { x: midX, y: payTop },
+    end: { x: midX, y: payBottom },
+    thickness: 1,
+    color: boxBorder,
+  });
+
+  // Left side: bank + upi text
+  const textYStart = payTop - 32;
+  let ty2 = textYStart;
+  const bankLines = [
+    'Bank: ' + asciiOnly(BANK_PDF.bankName || ''),
+    'Account No.: ' + asciiOnly(BANK_PDF.accountNumber || ''),
+    'IFSC: ' + asciiOnly(BANK_PDF.ifsc || ''),
+    'UPI: ' + asciiOnly(BANK_PDF.upi || ''),
+  ];
+  bankLines.forEach((line) => {
+    if (!line.trim().endsWith(':')) {
+      page.drawText(line, {
+        x: left + 10,
+        y: ty2,
+        size: 10,
+        font,
+        color: textDark,
+      });
+      ty2 -= 14;
+    }
+  });
+
+  // Right side: UPI name / id / QR
+  const upiQrImage = await loadUpiQrImage(doc, COMPANY_PDF.upiQrPath);
+  if (COMPANY_PDF.upi || COMPANY_PDF.upiName || upiQrImage) {
+    const qrSize = 50;
+    const qrX = midX + ((right - midX) - qrSize) / 2;
+    // Add small top margin so QR sits a bit lower from the header
+    const qrY = payTop - 55 - qrSize;
+    if (upiQrImage) {
+      const scale = Math.min(qrSize / upiQrImage.width, qrSize / upiQrImage.height);
+      page.drawImage(upiQrImage, {
+        x: qrX,
+        y: qrY,
+        width: upiQrImage.width * scale,
+        height: upiQrImage.height * scale,
+      });
+    }
+    const upiName = asciiOnly(COMPANY_PDF.upiName || COMPANY_PDF.name || '');
+    const upiId = asciiOnly(COMPANY_PDF.upi || '');
+    let uy = payTop - 30;
+    if (upiName) {
+      page.drawText(upiName, {
+        x: midX + 10,
+        y: uy,
+        size: 9.5,
+        font: fontBold,
+        color: textDark,
+      });
+      uy -= 14;
+    }
+    if (upiId) {
+      page.drawText('UPI ID: ' + upiId, {
+        x: midX + 10,
+        y: uy,
+        size: 9,
+        font,
+        color: textDark,
+      });
+    }
+  }
 
   const pdfBytes = await doc.save();
   return Buffer.from(pdfBytes);
@@ -1035,6 +1173,29 @@ export async function generatePaymentSlipPDF(payment) {
   y -= 14;
   page.drawLine({ start: { x: left, y }, end: { x: right, y }, thickness: 0.6, color: lineGrey });
   y -= 20;
+
+  // ── UPI Payment / QR (if configured) ──────────────────────────
+  const upiQrImage = await loadUpiQrImage(doc, COMPANY_PDF.upiQrPath);
+  if (COMPANY_PDF.upi || COMPANY_PDF.upiName || upiQrImage) {
+    const upiBoxH = 68;
+    y -= 12;
+    page.drawRectangle({ x: left, y: y - upiBoxH, width: contentW, height: upiBoxH, borderColor: lineGrey, borderWidth: 0.5 });
+    page.drawText('UPI Payment', { x: left, y: y - 12, size: 10, font: fontBold, color: tealDark });
+    const qrSize = 52;
+    const qrX = left + contentW - qrSize - 10;
+    const qrY = y - upiBoxH + 8;
+    if (upiQrImage) {
+      const scale = Math.min(qrSize / upiQrImage.width, qrSize / upiQrImage.height);
+      page.drawImage(upiQrImage, { x: qrX, y: qrY, width: upiQrImage.width * scale, height: upiQrImage.height * scale });
+    }
+    const textRight = upiQrImage ? qrX - 8 : right;
+    const upiName = asciiOnly(COMPANY_PDF.upiName || COMPANY_PDF.name || '');
+    const upiId = asciiOnly(COMPANY_PDF.upi || '');
+    if (upiName) page.drawText(upiName, { x: left + 6, y: y - 30, size: 9.5, font: fontBold, color: textDark });
+    if (upiId) page.drawText('UPI ID: ' + upiId, { x: left + 6, y: y - 46, size: 9, font, color: textDark });
+    page.drawText('Scan this QR code using any UPI app to make payment.', { x: left + 6, y: y - 58, size: 8, font, color: textGrey });
+    y -= upiBoxH + 12;
+  }
 
   // ── Footer ────────────────────────────────────────────────────
   const footer = 'Thank you for your payment. This is a computer-generated receipt and does not require a signature.';

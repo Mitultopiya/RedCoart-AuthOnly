@@ -17,12 +17,16 @@ function getNextInvoiceNumber() {
 
 export const list = async (req, res) => {
   try {
+    const branchId = req.query.branch_id ? parseInt(req.query.branch_id, 10) : (req.branchId ?? null);
+    const where = branchId ? ' WHERE i.branch_id = $1' : '';
+    const params = branchId ? [branchId] : [];
     const result = await pool.query(
       `SELECT i.*, c.name as customer_name, c.email as customer_email, c.mobile,
         (SELECT COALESCE(SUM(ip.amount), 0) FROM invoice_payments ip WHERE ip.invoice_id = i.id) as paid_amount
        FROM invoices i
-       LEFT JOIN customers c ON i.customer_id = c.id
-       ORDER BY i.created_at DESC`
+       LEFT JOIN customers c ON i.customer_id = c.id${where}
+       ORDER BY i.created_at DESC`,
+      params
     );
     const rows = result.rows.map((r) => {
       const total = Number(r.total || 0);
@@ -111,26 +115,28 @@ export const create = async (req, res) => {
       company_gst,
       items,
       created_by,
+      branch_id,
     } = req.body;
     if (!customer_id || !invoice_date || !due_date) {
       return res.status(400).json({ message: 'customer_id, invoice_date, due_date required.' });
     }
     const num = invoice_number || (await getNextInvoiceNumber());
+    const bid = branch_id ?? req.branchId ?? null;
     const result = await pool.query(
       `INSERT INTO invoices (
         invoice_number, booking_id, customer_id, invoice_date, due_date,
         subtotal, discount, discount_type, tax_percent, tax_amount, service_charges, round_off, total,
         status, created_by, place_of_supply, billing_address, customer_gst,
         travel_destination, travel_start_date, travel_end_date, adults, children,
-        package_name, hotel_category, vehicle_type, terms_text, company_gst
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28) RETURNING *`,
+        package_name, hotel_category, vehicle_type, terms_text, company_gst, branch_id
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29) RETURNING *`,
       [
         num, booking_id || null, customer_id, invoice_date, due_date,
         Number(subtotal) || 0, Number(discount) || 0, discount_type || 'flat', Number(tax_percent) || 0, Number(tax_amount) || 0,
         Number(service_charges) || 0, Number(round_off) || 0, Number(total) || 0,
         status || 'draft', created_by || null, place_of_supply || null, billing_address || null, customer_gst || null,
         travel_destination || null, travel_start_date || null, travel_end_date || null, Number(adults) || 0, Number(children) || 0,
-        package_name || null, hotel_category || null, vehicle_type || null, terms_text || null, company_gst || null,
+        package_name || null, hotel_category || null, vehicle_type || null, terms_text || null, company_gst || null, bid,
       ]
     );
     const invoice = result.rows[0];
@@ -233,14 +239,18 @@ export const remove = async (req, res) => {
 
 export const listAllPayments = async (req, res) => {
   try {
+    const branchId = req.query.branch_id ? parseInt(req.query.branch_id, 10) : (req.branchId ?? null);
+    const where = branchId ? ' WHERE i.branch_id = $1' : '';
+    const params = branchId ? [branchId] : [];
     const result = await pool.query(
       `SELECT ip.*, i.invoice_number, i.total as invoice_total,
               i.company_gst, i.customer_gst, i.place_of_supply,
               c.name as customer_name, c.mobile as customer_mobile
        FROM invoice_payments ip
        JOIN invoices i ON ip.invoice_id = i.id
-       LEFT JOIN customers c ON i.customer_id = c.id
-       ORDER BY ip.paid_at DESC`
+       LEFT JOIN customers c ON i.customer_id = c.id${where}
+       ORDER BY ip.paid_at DESC`,
+      params
     );
     res.json(result.rows);
   } catch (err) {

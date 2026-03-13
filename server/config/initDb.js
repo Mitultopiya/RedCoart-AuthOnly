@@ -25,6 +25,24 @@ export async function initDb() {
       CHECK (role IN ('admin', 'manager', 'staff'));
     `).catch(() => {});
 
+    // Branches (multi-branch management)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS branches (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        code VARCHAR(50) UNIQUE NOT NULL,
+        address TEXT,
+        city VARCHAR(100),
+        state VARCHAR(100),
+        phone VARCHAR(50),
+        email VARCHAR(255),
+        manager_name VARCHAR(255),
+        gst_number VARCHAR(50),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // New tables in dependency order
     const tables = [
       `CREATE TABLE IF NOT EXISTS customers (
@@ -119,6 +137,12 @@ export async function initDb() {
     await client.query(`
       ALTER TABLE activities ADD COLUMN IF NOT EXISTS image_url VARCHAR(500);
     `).catch(() => {});
+
+    // Masters: branch_id for cities / hotels / vehicles / activities
+    await client.query(`ALTER TABLE cities     ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;`).catch(() => {});
+    await client.query(`ALTER TABLE hotels     ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;`).catch(() => {});
+    await client.query(`ALTER TABLE vehicles   ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;`).catch(() => {});
+    await client.query(`ALTER TABLE activities ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;`).catch(() => {});
 
     // Packages: add new columns if table exists (old structure)
     await client.query(`
@@ -223,7 +247,7 @@ export async function initDb() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS quotations (
         id SERIAL PRIMARY KEY,
-        customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+        customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
         package_id INTEGER REFERENCES packages(id) ON DELETE SET NULL,
         valid_until DATE,
         discount DECIMAL(12,2) DEFAULT 0,
@@ -236,6 +260,20 @@ export async function initDb() {
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    await client.query(`ALTER TABLE quotations ALTER COLUMN customer_id DROP NOT NULL;`).catch(() => {});
+    await client.query(`ALTER TABLE quotations DROP CONSTRAINT IF EXISTS quotations_customer_id_fkey;`).catch(() => {});
+    await client.query(`ALTER TABLE quotations ADD CONSTRAINT quotations_customer_id_fkey
+      FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;`).catch(() => {});
+
+    // Allow deleting customers referenced by bookings / invoices: set customer_id to NULL instead of RESTRICT
+    await client.query(`ALTER TABLE bookings ALTER COLUMN customer_id DROP NOT NULL;`).catch(() => {});
+    await client.query(`ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_customer_id_fkey;`).catch(() => {});
+    await client.query(`ALTER TABLE bookings ADD CONSTRAINT bookings_customer_id_fkey
+      FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;`).catch(() => {});
+    await client.query(`ALTER TABLE invoices ALTER COLUMN customer_id DROP NOT NULL;`).catch(() => {});
+    await client.query(`ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_customer_id_fkey;`).catch(() => {});
+    await client.query(`ALTER TABLE invoices ADD CONSTRAINT invoices_customer_id_fkey
+      FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;`).catch(() => {});
     await client.query(`
       ALTER TABLE quotations ALTER COLUMN package_id DROP NOT NULL;
     `).catch(() => {});
@@ -249,6 +287,7 @@ export async function initDb() {
     await client.query(`
       ALTER TABLE quotations ADD COLUMN IF NOT EXISTS terms_text TEXT;
       ALTER TABLE quotations ADD COLUMN IF NOT EXISTS prepared_by VARCHAR(255);
+      ALTER TABLE quotations ADD COLUMN IF NOT EXISTS family_count INTEGER DEFAULT 1;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS terms_text TEXT;
       ALTER TABLE invoices ADD COLUMN IF NOT EXISTS company_gst VARCHAR(50);
     `).catch(() => {});
@@ -366,6 +405,15 @@ export async function initDb() {
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS branch_settings (
+        branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+        key VARCHAR(100) NOT NULL,
+        value TEXT,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (branch_id, key)
+      )
+    `).catch(() => {});
     // Seed default company settings if not present
     const settingsSeed = [
       ['company_name',    'Vision Travel Hub'],
@@ -379,6 +427,8 @@ export async function initDb() {
       ['bank_ifsc',       'BANK0000000'],
       ['bank_upi',        'yourcompany@upi'],
       ['bank_branch',     'Main Branch'],
+      ['upi_name',        ''],
+      ['upi_qr_path',     ''],
     ];
     for (const [k, v] of settingsSeed) {
       await client.query(
@@ -399,9 +449,67 @@ export async function initDb() {
       )
     `);
 
+    // Multi-branch: add branch_id to major tables and extend user roles
+    await client.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;`).catch(() => {});
+    await client.query(`
+      ALTER TABLE users ADD CONSTRAINT users_role_check
+      CHECK (role IN ('super_admin', 'admin', 'branch_admin', 'manager', 'staff'));
+    `).catch(() => {});
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;`).catch(() => {});
+    await client.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;`).catch(() => {});
+    await client.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;`).catch(() => {});
+    await client.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;`).catch(() => {});
+    await client.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;`).catch(() => {});
+
     // Indexes
+    await client.query('CREATE INDEX IF NOT EXISTS idx_branches_code ON branches(code);').catch(() => {});
+
+    // Seed default Ahmedabad branch if none exists
+    await client.query(`
+      INSERT INTO branches (name, code, address, city, state, phone, email, manager_name, gst_number, updated_at)
+      SELECT 'Ahmedabad Branch', 'AHM', 'Ahmedabad Branch Address', 'Ahmedabad', 'Gujarat', '', '', '', '', CURRENT_TIMESTAMP
+      WHERE NOT EXISTS (SELECT 1 FROM branches LIMIT 1)
+    `).catch(() => {});
+
+    // Move all existing data to Ahmedabad branch (AHM)
+    const ahm = await client.query(`SELECT id FROM branches WHERE code = 'AHM' OR name ILIKE '%ahmedabad%' ORDER BY id LIMIT 1`).catch(() => ({ rows: [] }));
+    const ahmId = ahm.rows[0]?.id;
+    if (ahmId) {
+      // One-time migration: move ALL existing data to Ahmedabad branch
+      const migKey = 'migrate_all_to_ahm_v2';
+      const mig = await client.query(`SELECT value FROM company_settings WHERE key = $1`, [migKey]).catch(() => ({ rows: [] }));
+      if (!mig.rows[0] || mig.rows[0].value !== 'done') {
+        await client.query(`UPDATE customers  SET branch_id = $1`, [ahmId]).catch(() => {});
+        await client.query(`UPDATE bookings   SET branch_id = $1`, [ahmId]).catch(() => {});
+        await client.query(`UPDATE quotations SET branch_id = $1`, [ahmId]).catch(() => {});
+        await client.query(`UPDATE invoices   SET branch_id = $1`, [ahmId]).catch(() => {});
+        await client.query(`UPDATE users      SET branch_id = $1`, [ahmId]).catch(() => {});
+        await client.query(`UPDATE cities     SET branch_id = $1`, [ahmId]).catch(() => {});
+        await client.query(`UPDATE hotels     SET branch_id = $1`, [ahmId]).catch(() => {});
+        await client.query(`UPDATE vehicles   SET branch_id = $1`, [ahmId]).catch(() => {});
+        await client.query(`UPDATE activities SET branch_id = $1`, [ahmId]).catch(() => {});
+        await client.query(
+          `INSERT INTO company_settings (key, value) VALUES ($1, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          [migKey, 'done']
+        ).catch(() => {});
+      }
+      // Safety: ensure any future NULL branch rows default to Ahmedabad
+      await client.query(`UPDATE customers  SET branch_id = $1 WHERE branch_id IS NULL`, [ahmId]).catch(() => {});
+      await client.query(`UPDATE bookings   SET branch_id = $1 WHERE branch_id IS NULL`, [ahmId]).catch(() => {});
+      await client.query(`UPDATE quotations SET branch_id = $1 WHERE branch_id IS NULL`, [ahmId]).catch(() => {});
+      await client.query(`UPDATE invoices   SET branch_id = $1 WHERE branch_id IS NULL`, [ahmId]).catch(() => {});
+      await client.query(`UPDATE users      SET branch_id = $1 WHERE branch_id IS NULL`, [ahmId]).catch(() => {});
+      await client.query(`UPDATE cities     SET branch_id = $1 WHERE branch_id IS NULL`, [ahmId]).catch(() => {});
+      await client.query(`UPDATE hotels     SET branch_id = $1 WHERE branch_id IS NULL`, [ahmId]).catch(() => {});
+      await client.query(`UPDATE vehicles   SET branch_id = $1 WHERE branch_id IS NULL`, [ahmId]).catch(() => {});
+      await client.query(`UPDATE activities SET branch_id = $1 WHERE branch_id IS NULL`, [ahmId]).catch(() => {});
+    }
+
+    await client.query('CREATE INDEX IF NOT EXISTS idx_customers_branch ON customers(branch_id);').catch(() => {});
     await client.query('CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);').catch(() => {});
     await client.query('CREATE INDEX IF NOT EXISTS idx_customers_mobile ON customers(mobile);').catch(() => {});
+    await client.query('CREATE INDEX IF NOT EXISTS idx_bookings_branch ON bookings(branch_id);').catch(() => {});
     await client.query('CREATE INDEX IF NOT EXISTS idx_bookings_customer ON bookings(customer_id);').catch(() => {});
     await client.query('CREATE INDEX IF NOT EXISTS idx_bookings_staff ON bookings(assigned_staff_id);').catch(() => {});
     await client.query('CREATE INDEX IF NOT EXISTS idx_payments_booking ON payments(booking_id);').catch(() => {});

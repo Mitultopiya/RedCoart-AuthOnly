@@ -2,13 +2,19 @@ import pool from '../config/db.js';
 
 export const list = async (req, res) => {
   try {
-    const { search, page = 1, limit = 20 } = req.query;
+    const { search, page = 1, limit = 20, branch_id } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
+    const branchId = branch_id ? parseInt(branch_id, 10) : (req.branchId ?? null);
     let where = '';
     const params = [];
+    if (branchId) {
+      params.push(branchId);
+      where = `WHERE branch_id = $${params.length}`;
+    }
     if (search) {
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
-      where = `WHERE name ILIKE $1 OR email ILIKE $2 OR mobile ILIKE $3`;
+      where += where ? ' AND ' : 'WHERE ';
+      where += `(name ILIKE $${params.length + 1} OR email ILIKE $${params.length + 2} OR mobile ILIKE $${params.length + 3})`;
     }
     const result = await pool.query(
       `SELECT * FROM customers ${where} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -37,12 +43,13 @@ export const getOne = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
-    const { name, mobile, email, address, passport, family_count, notes } = req.body;
+    const { name, mobile, email, address, passport, family_count, notes, branch_id } = req.body;
     if (!name) return res.status(400).json({ message: 'Name is required.' });
+    const bid = branch_id ?? req.branchId ?? null;
     const result = await pool.query(
-      `INSERT INTO customers (name, mobile, email, address, passport, family_count, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [name, mobile || null, email || null, address || null, passport || null, family_count ?? 0, notes || null]
+      `INSERT INTO customers (name, mobile, email, address, passport, family_count, notes, branch_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [name, mobile || null, email || null, address || null, passport || null, family_count ?? 0, notes || null, bid]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -54,11 +61,11 @@ export const create = async (req, res) => {
 export const update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, mobile, email, address, passport, family_count, notes } = req.body;
+    const { name, mobile, email, address, passport, family_count, notes, branch_id } = req.body;
     const result = await pool.query(
       `UPDATE customers SET name = COALESCE($1, name), mobile = $2, email = $3, address = $4, passport = $5,
-       family_count = COALESCE($6, family_count), notes = $7, updated_at = NOW() WHERE id = $8 RETURNING *`,
-      [name, mobile, email, address, passport, family_count, notes, id]
+       family_count = COALESCE($6, family_count), notes = $7, branch_id = COALESCE($8, branch_id), updated_at = NOW() WHERE id = $9 RETURNING *`,
+      [name, mobile, email, address, passport, family_count, notes, branch_id ?? req.branchId, id]
     );
     if (result.rowCount === 0) return res.status(404).json({ message: 'Customer not found.' });
     res.json(result.rows[0]);

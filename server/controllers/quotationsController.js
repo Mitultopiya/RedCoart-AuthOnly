@@ -35,7 +35,7 @@ export const getOne = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
-    const { customer_id, package_id, valid_until, discount, tax_percent, terms_text, items } = req.body;
+    const { customer_id, package_id, valid_until, discount, tax_percent, terms_text, items, family_count } = req.body;
     if (!customer_id) return res.status(400).json({ message: 'customer_id required.' });
     let preparedBy = null;
     try {
@@ -48,10 +48,11 @@ export const create = async (req, res) => {
     }
     const sub = (items || []).reduce((s, i) => s + Number(i.amount || 0), 0);
     const total = sub - Number(discount || 0);
+    const persons = family_count != null ? Math.max(1, parseInt(family_count, 10) || 1) : 1;
     const result = await pool.query(
-      `INSERT INTO quotations (customer_id, package_id, valid_until, discount, tax_percent, terms_text, prepared_by, total)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [customer_id, package_id || null, valid_until || null, discount || 0, tax_percent || 0, terms_text || null, preparedBy, total]
+      `INSERT INTO quotations (customer_id, package_id, valid_until, discount, tax_percent, terms_text, prepared_by, total, family_count)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [customer_id, package_id || null, valid_until || null, discount || 0, tax_percent || 0, terms_text || null, preparedBy, total, persons]
     );
     const q = result.rows[0];
     if (items && items.length) {
@@ -74,15 +75,16 @@ export const create = async (req, res) => {
 export const update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { valid_until, discount, tax_percent, terms_text, items } = req.body;
+    const { valid_until, discount, tax_percent, terms_text, items, family_count } = req.body;
     const existing = await pool.query('SELECT * FROM quotations WHERE id = $1', [id]);
     if (existing.rows.length === 0) return res.status(404).json({ message: 'Not found.' });
     const sub = (items || []).reduce((s, i) => s + Number(i.amount || 0), 0);
     const discountVal = discount != null ? discount : (existing.rows[0].discount || 0);
     const total = sub - Number(discountVal);
+    const persons = family_count != null ? Math.max(1, parseInt(family_count, 10) || 1) : (existing.rows[0].family_count ?? 1);
     await pool.query(
-      'UPDATE quotations SET valid_until = COALESCE($1, valid_until), discount = COALESCE($2, discount), tax_percent = COALESCE($3, tax_percent), terms_text = COALESCE($4, terms_text), total = $5, updated_at = NOW() WHERE id = $6',
-      [valid_until, discount, tax_percent, terms_text, total, id]
+      'UPDATE quotations SET valid_until = COALESCE($1, valid_until), discount = COALESCE($2, discount), tax_percent = COALESCE($3, tax_percent), terms_text = COALESCE($4, terms_text), total = $5, family_count = COALESCE($6, family_count), updated_at = NOW() WHERE id = $7',
+      [valid_until, discount, tax_percent, terms_text, total, persons, id]
     );
     if (items) {
       await pool.query('DELETE FROM quotation_items WHERE quotation_id = $1', [id]);

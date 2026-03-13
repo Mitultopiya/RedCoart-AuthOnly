@@ -1,10 +1,11 @@
 import express from 'express';
 import * as c from '../controllers/customersController.js';
-import { verifyToken, adminOrManager } from '../middleware/auth.js';
+import { verifyToken, adminOrManager, anyAuth, branchScope } from '../middleware/auth.js';
 
 const router = express.Router();
 router.use(verifyToken);
-router.use(adminOrManager);
+router.use(anyAuth);
+router.use(branchScope);
 
 router.get('/', c.list);
 router.get('/:id', c.getOne);
