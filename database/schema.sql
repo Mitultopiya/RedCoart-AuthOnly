@@ -13,12 +13,34 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) UNIQUE NOT NULL,
   password VARCHAR(255) NOT NULL,
   role VARCHAR(50) NOT NULL DEFAULT 'staff'
-    CHECK (role IN ('admin', 'manager', 'staff')),
+    CHECK (role IN ('super_admin', 'admin', 'branch_admin', 'manager', 'staff')),
   is_blocked BOOLEAN DEFAULT FALSE,
   branch VARCHAR(100),
+  branch_id INTEGER,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- -----------------------------------------------------------------------------
+-- STEP 1b: Branches (multi-branch management)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS branches (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  code VARCHAR(50) UNIQUE NOT NULL,
+  address TEXT,
+  city VARCHAR(100),
+  state VARCHAR(100),
+  phone VARCHAR(50),
+  email VARCHAR(255),
+  manager_name VARCHAR(255),
+  gst_number VARCHAR(50),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_branches_code ON branches(code);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;
 
 -- -----------------------------------------------------------------------------
 -- STEP 2: Customers & family (CRM)
@@ -32,10 +54,12 @@ CREATE TABLE IF NOT EXISTS customers (
   passport VARCHAR(100),
   family_count INTEGER DEFAULT 0,
   notes TEXT,
+  branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS idx_customers_branch ON customers(branch_id);
 CREATE TABLE IF NOT EXISTS customer_family (
   id SERIAL PRIMARY KEY,
   customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -195,7 +219,9 @@ CREATE TABLE IF NOT EXISTS booking_notes (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_bookings_customer ON bookings(customer_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_branch ON bookings(branch_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_package ON bookings(package_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_staff ON bookings(assigned_staff_id);
 CREATE INDEX IF NOT EXISTS idx_booking_notes_booking ON booking_notes(booking_id);
@@ -205,13 +231,14 @@ CREATE INDEX IF NOT EXISTS idx_booking_notes_booking ON booking_notes(booking_id
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS quotations (
   id SERIAL PRIMARY KEY,
-  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+  customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
   package_id INTEGER REFERENCES packages(id) ON DELETE SET NULL,
   valid_until DATE,
   discount DECIMAL(12,2) DEFAULT 0,
   tax_percent DECIMAL(5,2) DEFAULT 0,
   terms_text TEXT,
   prepared_by VARCHAR(255),
+  family_count INTEGER DEFAULT 1,
   status VARCHAR(50) DEFAULT 'draft',
   total DECIMAL(12,2) DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -224,6 +251,11 @@ ALTER TABLE quotations ADD CONSTRAINT quotations_package_id_fkey
   FOREIGN KEY (package_id) REFERENCES packages(id) ON DELETE SET NULL;
 ALTER TABLE quotations ADD COLUMN IF NOT EXISTS terms_text TEXT;
 ALTER TABLE quotations ADD COLUMN IF NOT EXISTS prepared_by VARCHAR(255);
+ALTER TABLE quotations ADD COLUMN IF NOT EXISTS family_count INTEGER DEFAULT 1;
+ALTER TABLE quotations ALTER COLUMN customer_id DROP NOT NULL;
+ALTER TABLE quotations DROP CONSTRAINT IF EXISTS quotations_customer_id_fkey;
+ALTER TABLE quotations ADD CONSTRAINT quotations_customer_id_fkey
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS quotation_items (
   id SERIAL PRIMARY KEY,
@@ -233,6 +265,7 @@ CREATE TABLE IF NOT EXISTS quotation_items (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE quotations ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_quotations_customer ON quotations(customer_id);
 CREATE INDEX IF NOT EXISTS idx_quotation_items_quotation ON quotation_items(quotation_id);
 
@@ -291,6 +324,7 @@ CREATE TABLE IF NOT EXISTS invoices (
 
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS terms_text TEXT;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS company_gst VARCHAR(50);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS invoice_items (
   id SERIAL PRIMARY KEY,
