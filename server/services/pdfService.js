@@ -875,27 +875,32 @@ export async function generateInvoiceDocPDF(invoice, customer = {}, items = [], 
   const taxPct = Number(invoice.tax_percent || 0);
   const total = Number(invoice.total || 0);
   const taxAmt = Math.max(0, total - (subtotal - discountVal));
+  const paid = Array.isArray(payments)
+    ? payments.reduce((s, p) => s + Number(p.amount || 0), 0)
+    : 0;
+  const due = Math.max(0, total - paid);
 
   const summaryRows = [
     ['Subtotal:', pdfAmount(subtotal)],
     ['Discount (' + discountPct + '%):', pdfAmount(discountVal)],
     ['Tax (' + taxPct + '%):', pdfAmount(taxAmt)],
-    ['Grand Total:', pdfAmount(total)],
+    ['Total Paid:', pdfAmount(paid)],
+    ['Due Amount:', pdfAmount(due)],
   ];
 
   const sumTop = termsTop + 4;
-  const sumH = 108;
-  const rowH2 = sumH / 4;
+  const rowH2 = 22;
+  const sumH = rowH2 * summaryRows.length;
   page.drawRectangle({ x: summaryX, y: sumTop - sumH, width: summaryW, height: sumH, borderColor: boxBorder, borderWidth: 1 });
-  for (let i = 1; i < 4; i++) {
+  for (let i = 1; i < summaryRows.length; i++) {
     const yy = sumTop - i * rowH2;
     page.drawLine({ start: { x: summaryX, y: yy }, end: { x: right, y: yy }, thickness: 1, color: boxBorder });
   }
   for (let i = 0; i < summaryRows.length; i++) {
-    const yy = sumTop - i * rowH2 - 20;
+    const yy = sumTop - i * rowH2 - 16;
     const [label, val] = summaryRows[i];
-    page.drawText(label, { x: summaryX + 10, y: yy, size: 11, font: fontBold, color: textDark });
-    drawRight(val, right - 8, yy, 11, fontBold);
+    page.drawText(label, { x: summaryX + 10, y: yy, size: 10, font: fontBold, color: textDark });
+    drawRight(val, right - 8, yy, 10, fontBold);
   }
 
   // Combined Bank + UPI box (one clean section, no overflow)

@@ -9,14 +9,24 @@ const tableColumns = {
 
 async function list(req, res, table) {
   try {
-    const branchId = req.query.branch_id ? parseInt(req.query.branch_id, 10) : (req.branchId ?? null);
+    const branchId =
+      req.query.branch_id && String(req.query.branch_id) !== 'all'
+        ? parseInt(req.query.branch_id, 10)
+        : (req.branchId ?? null);
     let where = '';
     const params = [];
-    if (branchId) {
-      where = 'WHERE branch_id = $1';
+    if (branchId && Number.isFinite(branchId)) {
+      where = 'WHERE t.branch_id = $1';
       params.push(branchId);
     }
-    const result = await pool.query(`SELECT * FROM ${table} ${where} ORDER BY id`, params);
+    const result = await pool.query(
+      `SELECT t.*, b.name as branch_name
+       FROM ${table} t
+       LEFT JOIN branches b ON t.branch_id = b.id
+       ${where}
+       ORDER BY t.id`,
+      params
+    );
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -29,7 +39,8 @@ async function create(req, res, table) {
     const baseCols = tableColumns[table];
     const cols = [...baseCols, 'branch_id'];
     const body = req.body;
-    const bid = body.branch_id ?? req.branchId ?? null;
+    const isElevated = ['admin', 'super_admin'].includes(req.user?.role);
+    const bid = isElevated ? (body.branch_id ?? req.branchId ?? null) : (req.branchId ?? null);
     const values = cols.map((c) => (c === 'branch_id' ? bid : (body[c] ?? null)));
     const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
     const result = await pool.query(

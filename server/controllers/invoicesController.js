@@ -17,14 +17,19 @@ function getNextInvoiceNumber() {
 
 export const list = async (req, res) => {
   try {
-    const branchId = req.query.branch_id ? parseInt(req.query.branch_id, 10) : (req.branchId ?? null);
-    const where = branchId ? ' WHERE i.branch_id = $1' : '';
+    const branchId =
+      req.query.branch_id && String(req.query.branch_id) !== 'all'
+        ? parseInt(req.query.branch_id, 10)
+        : (req.branchId ?? null);
+    const where = branchId && Number.isFinite(branchId) ? ' WHERE i.branch_id = $1' : '';
     const params = branchId ? [branchId] : [];
     const result = await pool.query(
       `SELECT i.*, c.name as customer_name, c.email as customer_email, c.mobile,
+        b.name as branch_name,
         (SELECT COALESCE(SUM(ip.amount), 0) FROM invoice_payments ip WHERE ip.invoice_id = i.id) as paid_amount
        FROM invoices i
-       LEFT JOIN customers c ON i.customer_id = c.id${where}
+       LEFT JOIN customers c ON i.customer_id = c.id
+       LEFT JOIN branches b ON i.branch_id = b.id${where}
        ORDER BY i.created_at DESC`,
       params
     );
@@ -121,7 +126,8 @@ export const create = async (req, res) => {
       return res.status(400).json({ message: 'customer_id, invoice_date, due_date required.' });
     }
     const num = invoice_number || (await getNextInvoiceNumber());
-    const bid = branch_id ?? req.branchId ?? null;
+    const isElevated = ['admin', 'super_admin'].includes(req.user?.role);
+    const bid = isElevated ? (branch_id ?? req.branchId ?? null) : (req.branchId ?? null);
     const result = await pool.query(
       `INSERT INTO invoices (
         invoice_number, booking_id, customer_id, invoice_date, due_date,
@@ -188,7 +194,10 @@ export const update = async (req, res) => {
       terms_text,
       company_gst,
       items,
+      branch_id,
     } = req.body;
+    const isElevated = ['admin', 'super_admin'].includes(req.user?.role);
+    const incomingBranchId = isElevated ? (branch_id ?? null) : null;
     await pool.query(
       `UPDATE invoices SET
         invoice_date=COALESCE($1,invoice_date), due_date=COALESCE($2,due_date),
@@ -197,14 +206,16 @@ export const update = async (req, res) => {
         service_charges=COALESCE($8,service_charges), round_off=COALESCE($9,round_off), total=COALESCE($10,total),
         status=COALESCE($11,status), place_of_supply=$12, billing_address=$13, customer_gst=$14,
         travel_destination=$15, travel_start_date=$16, travel_end_date=$17, adults=COALESCE($18,adults), children=COALESCE($19,children),
-        package_name=$20, hotel_category=$21, vehicle_type=$22, terms_text=$23, company_gst=$24, updated_at=NOW()
-       WHERE id=$25`,
+        package_name=$20, hotel_category=$21, vehicle_type=$22, terms_text=$23, company_gst=$24,
+        branch_id=COALESCE($25, branch_id), updated_at=NOW()
+       WHERE id=$26`,
       [
         invoice_date, due_date, subtotal, discount, discount_type, tax_percent, tax_amount,
         service_charges, round_off, total, status,
         place_of_supply || null, billing_address || null, customer_gst || null,
         travel_destination || null, travel_start_date || null, travel_end_date || null, adults, children,
-        package_name || null, hotel_category || null, vehicle_type || null, terms_text || null, company_gst || null, id,
+        package_name || null, hotel_category || null, vehicle_type || null, terms_text || null, company_gst || null,
+        incomingBranchId, id,
       ]
     );
     if (items) {
@@ -239,8 +250,11 @@ export const remove = async (req, res) => {
 
 export const listAllPayments = async (req, res) => {
   try {
-    const branchId = req.query.branch_id ? parseInt(req.query.branch_id, 10) : (req.branchId ?? null);
-    const where = branchId ? ' WHERE i.branch_id = $1' : '';
+    const branchId =
+      req.query.branch_id && String(req.query.branch_id) !== 'all'
+        ? parseInt(req.query.branch_id, 10)
+        : (req.branchId ?? null);
+    const where = branchId && Number.isFinite(branchId) ? ' WHERE i.branch_id = $1' : '';
     const params = branchId ? [branchId] : [];
     const result = await pool.query(
       `SELECT ip.*, i.invoice_number, i.total as invoice_total,

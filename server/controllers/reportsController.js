@@ -2,7 +2,10 @@ import pool from '../config/db.js';
 
 export const dashboard = async (req, res) => {
   try {
-    const branchId = req.query.branch_id ? parseInt(req.query.branch_id, 10) : (req.branchId ?? null);
+    const branchId =
+      req.query.branch_id && String(req.query.branch_id) !== 'all'
+        ? parseInt(req.query.branch_id, 10)
+        : (req.branchId ?? null);
     const invAnd = branchId ? ' AND branch_id = $1' : '';
     const invWhere = branchId ? ' WHERE branch_id = $1' : '';
     const invAliasAnd = branchId ? ' AND i.branch_id = $1' : '';
@@ -24,6 +27,7 @@ export const dashboard = async (req, res) => {
       paymentReminders,
       recentPaymentActivity,
       branchRevenue,
+      branchMetrics,
     ] = await Promise.all([
       pool.query('SELECT COUNT(*) FROM branches').then((r) => parseInt(r.rows[0].count, 10)),
       pool.query('SELECT COUNT(*) FROM customers' + (branchId ? ' WHERE branch_id = $1' : ''), bp).then((r) => parseInt(r.rows[0].count, 10)),
@@ -121,6 +125,32 @@ export const dashboard = async (req, res) => {
          LEFT JOIN invoices i ON i.branch_id = b.id AND i.status NOT IN ('cancelled','draft')
          GROUP BY b.id, b.name ORDER BY revenue DESC`
       ).then((r) => r.rows.map((row) => ({ branch_id: row.branch_id, branch_name: row.branch_name, revenue: Number(row.revenue) }))),
+      pool.query(
+        `SELECT
+           b.id   AS branch_id,
+           b.name AS branch_name,
+           COUNT(DISTINCT c.id) AS customers,
+           COUNT(DISTINCT bk.id) AS bookings,
+           COUNT(DISTINCT i.id) AS invoices,
+           COALESCE(SUM(i.total),0) AS revenue,
+           COALESCE(SUM(CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END),0) AS collected,
+           COALESCE(SUM(i.total),0) - COALESCE(SUM(CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END),0) AS pending
+         FROM branches b
+         LEFT JOIN customers c ON c.branch_id = b.id
+         LEFT JOIN bookings bk ON bk.branch_id = b.id
+         LEFT JOIN invoices i ON i.branch_id = b.id AND i.status NOT IN ('cancelled','draft')
+         GROUP BY b.id, b.name
+         ORDER BY revenue DESC`
+      ).then((r) => r.rows.map((row) => ({
+        branch_id: row.branch_id,
+        branch_name: row.branch_name,
+        customers: Number(row.customers || 0),
+        bookings: Number(row.bookings || 0),
+        invoices: Number(row.invoices || 0),
+        revenue: Number(row.revenue || 0),
+        collected: Number(row.collected || 0),
+        pending: Number(row.pending || 0),
+      }))),
     ]);
 
     const due = revenue - collected;
@@ -147,6 +177,7 @@ export const dashboard = async (req, res) => {
       paymentReminders,
       recentPaymentActivity,
       branchRevenue,
+      branchMetrics,
     });
   } catch (err) {
     console.error(err);
@@ -156,33 +187,74 @@ export const dashboard = async (req, res) => {
 
 export const revenueReport = async (req, res) => {
   try {
-    const { start, end } = req.query;
-    let where = "WHERE status NOT IN ('cancelled','draft')";
+    const { start, end, branch_id } = req.query;
+
+    // Normalize branch
+    let branchId = null;
+    if (branch_id && String(branch_id) !== 'all') {
+      const parsed = parseInt(branch_id, 10);
+      if (Number.isFinite(parsed) && parsed > 0) branchId = parsed;
+    } else if (req.branchId && Number.isFinite(req.branchId)) {
+      branchId = req.branchId;
+    }
+
+    // Only accept ISO date (YYYY-MM-DD); ignore anything else
+    const isValidDateStr = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const startDate = isValidDateStr(start) ? start : null;
+    const endDate = isValidDateStr(end) ? end : null;
+
+    let where = "WHERE i.status NOT IN ('cancelled','draft')";
     const params = [];
-    if (start) { params.push(start); where += ` AND invoice_date >= $${params.length}`; }
-    if (end) { params.push(end); where += ` AND invoice_date <= $${params.length}`; }
+
+    if (branchId) {
+      params.push(branchId);
+      where += ` AND i.branch_id = $${params.length}`;
+    }
+    if (startDate) {
+      params.push(startDate);
+      where += ` AND i.invoice_date >= $${params.length}`;
+    }
+    if (endDate) {
+      params.push(endDate);
+      where += ` AND i.invoice_date <= $${params.length}`;
+    }
+
     const result = await pool.query(
-      `SELECT i.invoice_number, i.invoice_date, i.total, i.status,
+      `SELECT i.invoice_number,
+              i.invoice_date,
+              i.total,
+              i.status,
               c.name as customer_name
-       FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id
-       ${where} ORDER BY i.invoice_date DESC`,
+       FROM invoices i
+       LEFT JOIN customers c ON i.customer_id = c.id
+       ${where}
+       ORDER BY i.invoice_date DESC`,
       params
     );
-    res.json(result.rows);
+
+    res.json(result.rows || []);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error.' });
+    console.error('Error in revenueReport:', err);
+    res.status(500).json({ message: 'Failed to load revenue report.' });
   }
 };
 
 export const pendingPayments = async (req, res) => {
   try {
+    const branchId =
+      req.query.branch_id && String(req.query.branch_id) !== 'all'
+        ? parseInt(req.query.branch_id, 10)
+        : (req.branchId ?? null);
+    const params = [];
+    const branchAnd = branchId && Number.isFinite(branchId) ? ` AND i.branch_id = $1` : '';
+    if (branchAnd) params.push(branchId);
     const result = await pool.query(
       `SELECT i.id, i.invoice_number, i.total, i.due_date, i.status,
               c.name as customer_name, c.mobile,
               COALESCE((SELECT SUM(amount) FROM invoice_payments WHERE invoice_id = i.id),0) as paid
        FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id
-       WHERE i.status NOT IN ('paid','cancelled')`
+       WHERE i.status NOT IN ('paid','cancelled')${branchAnd}`,
+      params
     );
     const withDue = result.rows
       .map((r) => ({ ...r, due: Number(r.total || 0) - Number(r.paid || 0) }))
@@ -197,14 +269,24 @@ export const pendingPayments = async (req, res) => {
 
 export const staffPerformance = async (req, res) => {
   try {
+    const branchId =
+      req.query.branch_id && String(req.query.branch_id) !== 'all'
+        ? parseInt(req.query.branch_id, 10)
+        : (req.branchId ?? null);
+    const params = [];
+    let where = `WHERE u.role IN ('manager','staff')`;
+    if (branchId && Number.isFinite(branchId)) { params.push(branchId); where += ` AND u.branch_id = $${params.length}`; }
     const result = await pool.query(
-      `SELECT u.id, u.name, u.email, u.branch,
-              COUNT(b.id) FILTER (WHERE b.status IN ('confirmed','ongoing','completed')) as completed_count,
-              COUNT(b.id) FILTER (WHERE b.status = 'cancelled') as cancelled_count
+      `SELECT u.id, u.name, u.email, u.branch_id, br.name as branch_name,
+              COUNT(bk.id) FILTER (WHERE bk.status IN ('confirmed','ongoing','completed')) as completed_count,
+              COUNT(bk.id) FILTER (WHERE bk.status = 'cancelled') as cancelled_count
        FROM users u
-       LEFT JOIN bookings b ON b.assigned_staff_id = u.id
-       WHERE u.role IN ('manager','staff')
-       GROUP BY u.id ORDER BY completed_count DESC`
+       LEFT JOIN branches br ON u.branch_id = br.id
+       LEFT JOIN bookings bk ON bk.assigned_staff_id = u.id
+       ${where}
+       GROUP BY u.id, u.name, u.email, u.branch_id, br.name
+       ORDER BY completed_count DESC`,
+      params
     );
     res.json(result.rows);
   } catch (err) {
