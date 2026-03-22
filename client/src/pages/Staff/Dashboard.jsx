@@ -4,22 +4,9 @@ import {
   FaRupeeSign,
   FaExclamationCircle,
   FaBell,
-  FaChartLine,
   FaHistory,
   FaWhatsapp,
 } from 'react-icons/fa';
-import {
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts';
 import { getDashboard } from '../../services/api';
 import Loading from '../../components/Loading';
 import { branchParams } from '../../utils/branch';
@@ -87,18 +74,8 @@ export default function StaffDashboard() {
 
   if (loading && !data) return <Loading />;
   const d = data || {};
-  const monthlySales = (d.monthlySales || []).map((m) => ({
-    month: m.month || '',
-    revenue: Number(m.revenue || 0),
-  }));
   const pendingAmount = Math.max(0, Number(d.pendingPayments ?? 0));
   const reminders = d.paymentReminders || [];
-  const totalCollected = Number(d.totalCollected || 0);
-  const totalRevenue = Number(d.monthlyRevenue || 0);
-  const paymentSplit = [
-    { name: 'Collected', value: totalCollected, color: '#10b981' },
-    { name: 'Pending', value: Math.max(0, totalRevenue - totalCollected), color: '#f59e0b' },
-  ];
   const recentPayments = d.recentPaymentActivity || [];
   const todayLabel = new Date().toLocaleDateString('en-IN', {
     weekday: 'short',
@@ -122,58 +99,6 @@ export default function StaffDashboard() {
         <StatCard icon={FaRupeeSign} label="Total Revenue" value={fmtCurr(d.monthlyRevenue ?? 0)} color="bg-emerald-500" />
         <StatCard icon={FaExclamationCircle} label="Pending Amount" value={fmtCurr(pendingAmount)} color="bg-amber-500" />
         <StatCard icon={FaBell} label="Pending Invoices" value={fmt(d.pendingPaymentsCount ?? 0)} color="bg-rose-500" />
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-5 min-w-0">
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden min-w-0">
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-            <FaChartLine className="text-teal-600" />
-            <h3 className="text-sm font-semibold text-slate-800">Monthly Revenue Trend</h3>
-          </div>
-          <div className="p-3 h-72 min-w-0">
-            {monthlySales.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
-                <AreaChart data={monthlySales}>
-                  <defs>
-                    <linearGradient id="staffRevenueGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0d9488" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#0d9488" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 10 }} stroke="#64748b" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="#64748b" />
-                  <Tooltip formatter={(v) => [fmtCurr(v), 'Revenue']} />
-                  <Area type="monotone" dataKey="revenue" stroke="#0d9488" fill="url(#staffRevenueGrad)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-slate-400 text-sm">No revenue data available</div>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden min-w-0">
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-            <FaChartLine className="text-indigo-600" />
-            <h3 className="text-sm font-semibold text-slate-800">Collections vs Pending</h3>
-          </div>
-          <div className="p-3 h-72 min-w-0">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
-              <BarChart data={paymentSplit}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="#64748b" />
-                <YAxis tick={{ fontSize: 10 }} stroke="#64748b" />
-                <Tooltip formatter={(v) => [fmtCurr(v), 'Amount']} />
-                <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                  {paymentSplit.map((entry) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">

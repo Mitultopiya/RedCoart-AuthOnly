@@ -130,6 +130,7 @@ const stripTripReference = (value) => {
 export default function Invoices() {
   const { toast } = useToast();
   const user = getStoredUser();
+  const isStaff = String(user?.role || '').toLowerCase() === 'staff';
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState({ open: false });
@@ -208,7 +209,14 @@ export default function Invoices() {
     getHotels(params).then((r) => setHotels(r.data || [])).catch(() => setHotels([]));
     getVehicles(params).then((r) => setVehicles(r.data || [])).catch(() => setVehicles([]));
     getActivities(params).then((r) => setActivityMasters(r.data || [])).catch(() => setActivityMasters([]));
-    getStaff().then((r) => setStaff(r.data || [])).catch(() => {});
+    const role = String(user?.role || '').toLowerCase();
+    if (role === 'staff') {
+      // Staff users are not allowed to list all staff; keep only current user for sales executive field.
+      const self = user?.id ? [{ id: user.id, name: user.name || 'You' }] : [];
+      setStaff(self);
+    } else {
+      getStaff().then((r) => setStaff(r.data || [])).catch(() => setStaff([]));
+    }
     getCompanySettings().then((r) => setPaymentSettings(r.data || {})).catch(() => {});
 
     const onBranch = () => setBranchId(getSelectedBranchId());
@@ -784,7 +792,9 @@ export default function Invoices() {
                         {row.status !== 'paid' && row.status !== 'cancelled' && (
                           <button onClick={() => openRecordPayment(row)} className="px-2.5 py-1 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition">Pay</button>
                         )}
-                        <button onClick={() => handleDelete(row)} className="px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition">Del</button>
+                        {!isStaff && (
+                          <button onClick={() => handleDelete(row)} className="px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition">Del</button>
+                        )}
                       </div>
                     </td>
                   </tr>

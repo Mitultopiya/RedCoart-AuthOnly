@@ -1,13 +1,13 @@
 # Travel Agency Management System (Enterprise)
 
-Full-stack ERP-style travel agency application with CRM, package builder, quotations, invoices, payment slips, company settings, staff management, and reports with charts.
+Full-stack ERP-style travel agency application with CRM, itinerary templates, quotations, invoices, payment slips, company settings, staff management, and reports with charts.
 
 ---
 
 ## Tech Stack
 
 - **Frontend:** React, Vite, Tailwind CSS, React Router, Axios, React Icons, Recharts
-- **Backend:** Node.js, Express.js, PostgreSQL, JWT, bcrypt, Multer, pdf-lib
+- **Backend:** Node.js, Express.js, **MySQL** (mysql2), JWT, bcrypt, Multer, pdf-lib
 - **Roles:** Super Admin, Admin, Branch Admin, Manager, Staff (login only; no signup; admin creates users)
 
 ---
@@ -16,31 +16,50 @@ Full-stack ERP-style travel agency application with CRM, package builder, quotat
 
 - **Email:** admin@travel.com  
 - **Password:** admin123  
-- Created automatically on first server start.
+- Created automatically on first API start if the `users` table is empty (`server/server.js`).
 
 ---
 
 ## Prerequisites
 
 - Node.js 18+
-- PostgreSQL
+- **MySQL** 5.7+ or 8.x (local or remote)
 
 ---
 
 ## Database Setup
 
-1. Create database:
-   ```bash
-   createdb travel_agency
-   ```
+**Option A — Recommended (empty database)**  
+Create an empty database (e.g. `travel_hub`), configure `server/.env` (see below), then start the server. **`server/config/initDb.js`** creates all tables, runs column migrations (`ensureColumn` for `created_by`, etc.), seeds a default **Ahmedabad** branch when none exist, seeds **company_settings**, and fixes orphan FKs.
 
-2. Run schema (step-by-step, in order):
-   ```bash
-   psql -d travel_agency -f database/schema.sql
-   ```
-   Or let the server create/alter tables on startup via `server/config/initDb.js`.
+```bash
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS travel_hub CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+```
 
-3. Ensure `.env` in `server/` has correct `DATABASE_URL` (or `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`).
+**Option B — MySQL Workbench / CLI import**  
+Import the full schema (aligned with `initDb.js`):
+
+```bash
+mysql -u root -p < database/mysql_workbench_import.sql
+```
+
+Still run the API once afterward so `initDb()` can apply any newer migrations and seed branch/settings if needed.
+
+**Legacy:** `database/schema.sql` targets PostgreSQL-style DDL; the running app uses **MySQL** as above.
+
+---
+
+## Environment (Backend)
+
+Copy `server/.env.example` to `server/.env` and set:
+
+| Variable | Purpose |
+|----------|---------|
+| `PORT` | API port (e.g. `5000` or `5002`) |
+| `JWT_SECRET` | Strong secret for JWT signing |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | MySQL connection |
+
+There is **no** `DATABASE_URL` for Postgres in this project.
 
 ---
 
@@ -50,11 +69,11 @@ Full-stack ERP-style travel agency application with CRM, package builder, quotat
 cd server
 npm install
 cp .env.example .env
-# Edit .env: PORT, JWT_SECRET, DATABASE_URL or DB_* vars
+# Edit .env: PORT, JWT_SECRET, DB_*
 npm start
 ```
 
-Server runs at http://localhost:5000. Tables are created/updated automatically; default admin is seeded if missing.
+The API listens on `http://localhost:<PORT>` (check `.env`). Tables are created/updated on startup; default admin is seeded if no users exist.
 
 ---
 
@@ -63,103 +82,75 @@ Server runs at http://localhost:5000. Tables are created/updated automatically; 
 ```bash
 cd client
 npm install
-# Optional: set VITE_API_URL in .env (default http://localhost:5000/api)
+# Optional: client/.env — VITE_API_URL (default http://localhost:5000/api; match your server PORT)
 npm run dev
 ```
 
-Open http://localhost:5173.
+Open the URL Vite prints (often `http://localhost:5173`).
 
 ---
 
 ## Core Modules & Features
 
 ### 1. Dashboard
-- Branch selector (Ahmedabad, Baroda, Junagadh, Rajkot, etc.) at the top. The selected branch is remembered and applied across Dashboard, Settings, Customers, Invoices, Payment Slips, Master data, Staff, and Reports.
-- Summary cards: **Total Customers**, **Total Revenue**, **Pending Payments**, **Completed Payments** (per branch)
-- Payments Overview bar chart (Paid vs Pending invoices) and other analytics
+- Branch selector (Ahmedabad, Baroda, Junagadh, Rajkot, etc.). Selection is stored and applied across Dashboard, Settings, Customers, Invoices, Payment Slips, masters, Staff, and Reports (admins/managers; staff stay scoped to their branch token).
+- Summary cards: **Total Customers**, **Total Revenue**, **Pending Payments**, **Completed Payments** (branch-aware where applicable)
+- Charts: payments overview, monthly revenue (layout varies by role)
 
 ### 2. Customer CRM
-- Add / Edit / View customers (name, mobile, email, address, passport, family count, notes)
-- Family members, travel history, search & filters
-- **Under Customers:** Quotations, Invoice, Payment Slip (dropdown navigation)
+- Add / Edit / View customers (name, mobile, email, address, passport, family count, notes); **`created_by`** for staff scoping
+- Family members, search & filters
+- Under **Customers:** Invoice, Payment Slip (sidebar); quotations may be available depending on build/routing
 
-### 3. Package Builder
-- Create packages: name, description, price, duration, **multi-city** (city_ids), **default hotel**, **default vehicle**
-- Day-wise itinerary (activities, hotel, meals, transport, notes)
-- **Image upload** for packages (no PDF upload)
-- Package deletion: bookings/quotations `package_id` set to NULL before delete
+### 3. Package Builder (when enabled in navigation)
+- Packages with cities, default hotel/vehicle, package days, images
+- Package deletion: dependent bookings/quotations may null `package_id` first
 
 ### 4. Master Data (Preferred Items)
-- **Cities** – CRUD, **branch-specific** (only visible/usable in the selected branch)
-- **Hotels** – CRUD with **room type**, **price**, **city**, **branch-specific**
-- **Vehicles** – CRUD with **price**, **city**, **branch-specific**
-- **Activities** – CRUD with **image upload**, **branch-specific**
-- Guides removed from scope
+- **Cities**, **Hotels**, **Vehicles**, **Activities** — branch-scoped where applicable
 
 ### 5. Booking Management
-- Select customer, package, travel dates; assign hotel, vehicle, staff
-- Status: inquiry → quotation_sent → confirmed → ongoing → completed / cancelled
-- Internal notes, documents
+- Customer, package, dates; hotel, vehicle, staff assignment; status workflow (inquiry → … → completed / cancelled)
+- **`created_by`** on bookings for ownership; staff visibility rules apply
 
 ### 6. Quotations
-- New Quotation: customer, package (optional), **valid until**, **Terms & Conditions** (manual, one point per line)
-- **Package / Hotel / Vehicle** dropdowns: when package selected, defaults auto-fill; **Hotel** and **Vehicle** are **manual select** (city-wise filtered when package has cities)
-- Cost breakdown: Package, Hotel, Vehicle rows editable; add/remove rows; discount, tax %, grand total
-- **Prepared by:** automatically set to **logged-in user name** when quotation is created (stored in DB, shown in View, PDF, print)
-- Download PDF, Print; quotation PDF uses company settings and full T&C with word-wrap
+- Customer, package, valid until, terms, line items, PDF
 
 ### 7. Invoices
-- Create/Edit invoice: customer, dates, items, discount, tax, **terms_text**, **company_gst**
-- Add payments (amount, mode, reference); track paid/due
-- **Download PDF** – layout aligned with quotation style; Bank Details, GST; no blank Rs.0.00 rows
+- Full invoice fields (GST, travel meta, line items), payments, PDF
 
-### 8. Payment Slips (under Customers)
-- **Customer-wise** list: expand per customer to see all payments
-- Columns: #, Invoice No., Amount, Mode, Date, Actions (Receipt, PDF, Delete)
-- **Receipt modal:** company details, amount, GST; **Print** (same structure as PDF); **Download PDF**
-- Reference column removed from list and receipt
-- Company details and GST from **Company Settings** (live)
+### 8. Payment Slips
+- Customer-wise payment list, receipt, PDF; **`created_by`** on payments where used
 
-### 9. Company Settings & Branch Settings (Admin)
-- **Company information:** name, address, phone, email, GST, website
-- **Bank details:** bank name, account number, IFSC, UPI, branch
-- **Payment Settings:** UPI Name, UPI ID, **UPI QR Code upload** (image stored in `/uploads/payment`), used in invoice/payment-slip PDFs
-- **Branch Management:** create/edit/delete branches (Name, Code, Address, City, State, Phone, Email, Manager Name, GST Number)
-- Settings are **branch-aware**: choose a branch in Settings and only that branch’s overrides (bank/UPI/QR) are edited; global defaults remain in `company_settings`.
-- All settings are used in **all PDFs** (quotation, invoice, payment slip) and receipt print.
+### 9. Company & Branch Settings
+- Company info, bank, UPI/QR, per-branch overrides via **branch_settings**
 
 ### 10. Staff Management
-- Add staff: name, email, password, **assigned branch** (selected from real branches); role is **staff** (no role dropdown)
-- Staff listing filtered by current branch; staff login is scoped to their assigned `branch_id` (branch admins/staff only see their branch’s data)
-- List: Name, Email, Branch, Status, Actions (Edit, **Reset Password**, Block, Delete)
-- **Reset Password:** admin-only; modal to set new password for selected staff
-- Delete staff supported (API fixed for 404)
+- Staff users with branch assignment; reset password, block, delete (UI may hide delete for some roles)
 
 ### 11. Reports & Analytics
-- All reports respect the **selected branch** (branch-aware dashboard data).
-- **Overview:** KPI cards (customers, revenue, collected, pending); invoice status pills; **monthly revenue chart** (last 6 months); **donut charts** (collections by mode, invoice status); quotation stats
-- **Revenue:** date filter; bar chart; revenue table with totals
-- **Pending Payments:** summary cards; bar chart (due vs collected); table with overdue badges, progress, totals
-- **Staff:** performance bar chart; staff table with completed/cancelled counts and performance %
-- **Refresh** button; real-time data; mobile-responsive layout
+- Branch-aware data where the API supports it
+- **Overview:** KPIs, charts (invoice status, collections, etc.)
+- **Revenue / Pending Payments:** tables and charts
+- **Staff:** booking-related performance (bookings attributed by assignee, creator, or invoice linkage)
+- **Branches:** branch summaries where implemented
 
-### 12. Documents
-- Upload and link files to entities (e.g. customer, booking)
+### 12. Itinerary Templates
+- Template library with day rows (states/cities/nights)
 
 ### 13. PDFs
-- **Quotation PDF** – company logo, quote no., dates, **Prepared by**, customer, items, T&C (full text, word-wrapped), summary, bank details
-- **Invoice PDF** – same style; invoice no., GST, **combined Bank & UPI box with QR image**, no blank item rows
-- **Payment slip PDF** – receipt layout; company + GST; amount received; UPI QR + payment card
+- Quotation, invoice, payment slip, itinerary — driven by `server/services/pdfService.js` and company/branch settings
 
 ---
 
-## Role Permissions
+## Role Permissions (summary)
 
-- **Super Admin:** All branches, all features
-- **Admin:** All branches, user management, company & branch settings; staff reset password
-- **Branch Admin:** Access **only their branch**; manage staff and data within that branch
-- **Manager:** Customers, packages, bookings, quotations, invoices, payment slips, reports, staff (no delete staff)
-- **Staff:** View assigned bookings, update status, add notes (no master data, no settings)
+- **Super Admin / Admin:** Broad access; settings and user management
+- **Branch Admin:** Scoped to their branch
+- **Manager:** Operational modules + reports (per middleware)
+- **Staff:** Scoped data (`created_by` / branch); restricted actions (e.g. no delete on some entities in UI)
+
+JWT **roles are matched case-insensitively** in middleware.
 
 ---
 
@@ -171,18 +162,17 @@ Open http://localhost:5173.
 | Users | `GET/POST/DELETE /api/users`, `PATCH /api/users/:id/block` |
 | Customers | `GET/POST/PUT/DELETE /api/customers`, family sub-routes |
 | Masters | `GET/POST/PUT/DELETE /api/masters/cities|hotels|vehicles|activities` |
-| Packages | `GET/POST/PUT/DELETE /api/packages`, `POST /api/packages/upload`, `POST /api/packages/:id/days` |
+| Packages | `GET/POST/PUT/DELETE /api/packages`, uploads, package days |
 | Bookings | `GET/POST/PUT /api/bookings`, `POST /api/bookings/:id/notes` |
-| Quotations | `GET/POST/PUT/DELETE /api/quotations`, `POST /api/quotations/:id/convert-booking` |
-| Invoices | `GET/POST/PUT/DELETE /api/invoices`, `GET /api/invoices/next-number`, `GET /api/invoices/all-payments`, `POST /api/invoices/:id/payments`, `DELETE /api/invoices/:id/payments/:pid` |
-| Payments | `GET /api/payments/booking/:id`, `POST/DELETE /api/payments` |
-| Staff | `GET/POST/PUT/DELETE /api/staff`, `PATCH /api/staff/:id/block`, `PATCH /api/staff/:id/reset-password`, `GET /api/staff/:id/performance` |
-| Reports | `GET /api/reports/dashboard|revenue|pending-payments|staff-performance` |
-| Settings | `GET/PUT /api/settings` |
-| PDF | `GET /api/pdf/itinerary/:id`, `GET /api/pdf/invoice/:id`, `GET /api/pdf/invoice-doc/:id`, `GET /api/pdf/quotation/:id`, `GET /api/pdf/payment-slip/:id` |
-| Documents | `GET/POST/DELETE /api/documents` (query: entity_type, entity_id) |
+| Quotations | `GET/POST/PUT/DELETE /api/quotations`, convert, etc. |
+| Invoices | `GET/POST/PUT/DELETE /api/invoices`, payments, next number |
+| Payments | Booking/invoice payment routes as implemented |
+| Staff | `GET/POST/PUT/DELETE /api/staff`, block, reset-password, performance |
+| Reports | `GET /api/reports/dashboard`, `revenue`, `pending-payments`, `staff-performance` |
+| Settings | `GET/PUT /api/settings`, branch settings |
+| PDF | `GET /api/pdf/...` (itinerary, invoice, quotation, payment-slip, etc.) |
 
-Use header: `Authorization: Bearer <token>`. Base URL: `http://localhost:5000/api`.
+Use header: `Authorization: Bearer <token>`. Base URL: `http://localhost:<PORT>/api`.
 
 ---
 
@@ -191,27 +181,25 @@ Use header: `Authorization: Bearer <token>`. Base URL: `http://localhost:5000/ap
 ```
 Travel-Agency/
 ├── client/src/
-│   ├── components/       # Sidebar, Header, Modal, Button, Input, Loading, etc.
+│   ├── components/       # Sidebar, Header, Modal, Loading, …
 │   ├── context/          # ToastContext
 │   ├── pages/
 │   │   ├── Login.jsx
-│   │   ├── Admin/         # Dashboard, Customers, Quotations, Invoices, PaymentSlips,
-│   │   │                   # Packages, PackageBuilder, Bookings, Reports, Staff, Settings
-│   │   │   └── Masters/    # Cities, Hotels, Vehicles, Activities
-│   │   └── Staff/         # Dashboard, MyBookings, BookingDetails
+│   │   ├── Admin/        # Dashboard, Customers, Invoices, PaymentSlips, …
+│   │   └── Staff/        # Staff dashboard, bookings
 │   ├── services/api.js
-│   └── utils/auth.js
+│   └── utils/            # auth, branch, …
 ├── server/
-│   ├── config/           # db.js, initDb.js
-│   ├── controllers/      # auth, users, customers, masters, packages, bookings,
-│   │                      # quotations, invoices, payments, documents, staff, reports, pdf, settings
-│   ├── middleware/       # auth.js (JWT, roles), upload.js (Multer)
+│   ├── config/           # db.js (MySQL pool), initDb.js
+│   ├── controllers/
+│   ├── middleware/       # auth.js (JWT, roles: adminOnly, reportsReader, …)
 │   ├── routes/
-│   ├── services/         # pdfService.js (quotation, invoice, payment slip PDFs)
+│   ├── services/         # pdfService.js
 │   ├── uploads/
 │   └── server.js
 ├── database/
-│   └── schema.sql        # Step-by-step PostgreSQL schema
+│   ├── mysql_workbench_import.sql   # Full MySQL schema (sync with initDb.js)
+│   └── schema.sql                   # Legacy Postgres-oriented reference
 └── README.md
 ```
 
@@ -220,14 +208,13 @@ Travel-Agency/
 ## Security
 
 - Passwords hashed with bcrypt
-- JWT authentication; role-based middleware (adminOnly, adminOrManager, anyAuth)
-- Store secrets in `.env`; do not commit `.env`
+- JWT authentication; role-based middleware (`adminOnly`, `adminOrManager`, `reportsReader`, `anyAuth`, …)
+- Store secrets in `server/.env`; do not commit `.env`
 
 ---
 
 ## UI Notes
 
-- White theme with teal/cyan accents; React Icons throughout
-- Sidebar: Dashboard, Customers (with Quotations, Invoice, Payment Slip), Packages, Package Builder, Preferred Items (Cities, Hotels, Vehicles, Activities), Reports, Staff, Settings
-- Tables: custom styled (teal gradient header, hover, pill actions); mobile-responsive
-- Login: corporate-style with logo and brand colours
+- White theme with teal/cyan accents
+- Sidebar items may be toggled in `client/src/components/AdminLayout.jsx` (some entries commented out in the default build)
+- Tables: teal gradient headers, responsive layout

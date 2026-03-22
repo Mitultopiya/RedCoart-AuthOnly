@@ -1,4 +1,5 @@
 import pool from '../config/db.js';
+import { staffCanAccessCustomer, staffRequiresCreatorScope } from '../utils/dataScope.js';
 
 function resolveBranchId(req) {
   if (req.query.branch_id != null && String(req.query.branch_id) === 'all') return null;
@@ -10,6 +11,14 @@ function resolveBranchId(req) {
   return req.branchId ?? null;
 }
 
+async function sanitizeBranchId(value) {
+  if (value == null || value === '') return null;
+  const id = Number(value);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const branch = await pool.query('SELECT id FROM branches WHERE id = $1 LIMIT 1', [id]);
+  return branch.rows.length ? id : null;
+}
+
 export const list = async (req, res) => {
   try {
     const { search, page = 1, limit = 20, branch_id } = req.query;
@@ -17,14 +26,18 @@ export const list = async (req, res) => {
     const branchId = resolveBranchId(req);
     let where = '';
     const params = [];
-    if (branchId && Number.isFinite(branchId)) {
+    if (staffRequiresCreatorScope(req)) {
+      const uid = req.user.id;
+      params.push(uid, branchId ?? null);
+      where = `WHERE ((c.created_by = $1 AND ($2 IS NULL OR c.branch_id = $2)) OR EXISTS (SELECT 1 FROM invoices i WHERE i.customer_id = c.id AND i.created_by = $1 AND ($2 IS NULL OR i.branch_id = $2)))`;
+    } else if (branchId && Number.isFinite(branchId)) {
       params.push(branchId);
       where = `WHERE c.branch_id = $${params.length}`;
     }
     if (search) {
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
       where += where ? ' AND ' : 'WHERE ';
-      where += `(name ILIKE $${params.length + 1} OR email ILIKE $${params.length + 2} OR mobile ILIKE $${params.length + 3})`;
+      where += `(c.name ILIKE $${params.length + 1} OR c.email ILIKE $${params.length + 2} OR c.mobile ILIKE $${params.length + 3})`;
     }
     const result = await pool.query(
       `SELECT c.*, b.name as branch_name
@@ -52,6 +65,9 @@ export const getOne = async (req, res) => {
     const { id } = req.params;
     const cust = await pool.query('SELECT * FROM customers WHERE id = $1', [id]);
     if (cust.rows.length === 0) return res.status(404).json({ message: 'Customer not found.' });
+    if (!(await staffCanAccessCustomer(pool, req, id))) {
+      return res.status(404).json({ message: 'Customer not found.' });
+    }
     const family = await pool.query('SELECT * FROM customer_family WHERE customer_id = $1 ORDER BY id', [id]);
     res.json({ ...cust.rows[0], family: family.rows });
   } catch (err) {
@@ -65,11 +81,13 @@ export const create = async (req, res) => {
     const { name, mobile, email, address, passport, family_count, notes, branch_id } = req.body;
     if (!name) return res.status(400).json({ message: 'Name is required.' });
     const isElevated = ['admin', 'super_admin'].includes(req.user?.role);
-    const bid = isElevated ? (branch_id ?? req.branchId ?? null) : (req.branchId ?? null);
+    const rawBranchId = isElevated ? (branch_id ?? req.branchId ?? null) : (req.branchId ?? null);
+    const bid = await sanitizeBranchId(rawBranchId);
+    const creatorId = req.user?.id != null ? Number(req.user.id) : null;
     const result = await pool.query(
-      `INSERT INTO customers (name, mobile, email, address, passport, family_count, notes, branch_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [name, mobile || null, email || null, address || null, passport || null, family_count ?? 0, notes || null, bid]
+      `INSERT INTO customers (name, mobile, email, address, passport, family_count, notes, branch_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [name, mobile || null, email || null, address || null, passport || null, family_count ?? 0, notes || null, bid, creatorId]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -81,9 +99,14 @@ export const create = async (req, res) => {
 export const update = async (req, res) => {
   try {
     const { id } = req.params;
+    const existing = await pool.query('SELECT * FROM customers WHERE id = $1', [id]);
+    if (existing.rows.length === 0) return res.status(404).json({ message: 'Customer not found.' });
+    if (!(await staffCanAccessCustomer(pool, req, id))) {
+      return res.status(404).json({ message: 'Customer not found.' });
+    }
     const { name, mobile, email, address, passport, family_count, notes, branch_id } = req.body;
     const isElevated = ['admin', 'super_admin'].includes(req.user?.role);
-    const incomingBranchId = isElevated ? (branch_id ?? null) : null;
+    const incomingBranchId = isElevated ? await sanitizeBranchId(branch_id ?? null) : null;
     const result = await pool.query(
       `UPDATE customers SET name = COALESCE($1, name), mobile = $2, email = $3, address = $4, passport = $5,
        family_count = COALESCE($6, family_count), notes = $7, branch_id = COALESCE($8, branch_id), updated_at = NOW() WHERE id = $9 RETURNING *`,
@@ -100,6 +123,11 @@ export const update = async (req, res) => {
 export const remove = async (req, res) => {
   try {
     const { id } = req.params;
+    const existing = await pool.query('SELECT id, created_by FROM customers WHERE id = $1', [id]);
+    if (existing.rows.length === 0) return res.status(404).json({ message: 'Customer not found.' });
+    if (!(await staffCanAccessCustomer(pool, req, id))) {
+      return res.status(404).json({ message: 'Customer not found.' });
+    }
     const result = await pool.query('DELETE FROM customers WHERE id = $1 RETURNING id', [id]);
     if (result.rowCount === 0) return res.status(404).json({ message: 'Customer not found.' });
     res.json({ message: 'Deleted.' });
@@ -112,6 +140,11 @@ export const remove = async (req, res) => {
 export const addFamily = async (req, res) => {
   try {
     const { id } = req.params;
+    const cust = await pool.query('SELECT created_by FROM customers WHERE id = $1', [id]);
+    if (cust.rows.length === 0) return res.status(404).json({ message: 'Customer not found.' });
+    if (!(await staffCanAccessCustomer(pool, req, id))) {
+      return res.status(404).json({ message: 'Customer not found.' });
+    }
     const { name, relation, mobile } = req.body;
     if (!name) return res.status(400).json({ message: 'Family member name is required.' });
     const result = await pool.query(
@@ -128,6 +161,11 @@ export const addFamily = async (req, res) => {
 export const removeFamily = async (req, res) => {
   try {
     const { id, fid } = req.params;
+    const cust = await pool.query('SELECT created_by FROM customers WHERE id = $1', [id]);
+    if (cust.rows.length === 0) return res.status(404).json({ message: 'Customer not found.' });
+    if (!(await staffCanAccessCustomer(pool, req, id))) {
+      return res.status(404).json({ message: 'Customer not found.' });
+    }
     const result = await pool.query('DELETE FROM customer_family WHERE id = $1 AND customer_id = $2 RETURNING id', [fid, id]);
     if (result.rowCount === 0) return res.status(404).json({ message: 'Not found.' });
     res.json({ message: 'Deleted.' });
@@ -141,6 +179,11 @@ export const removeFamily = async (req, res) => {
 export const setFamily = async (req, res) => {
   try {
     const { id } = req.params;
+    const cust = await pool.query('SELECT created_by FROM customers WHERE id = $1', [id]);
+    if (cust.rows.length === 0) return res.status(404).json({ message: 'Customer not found.' });
+    if (!(await staffCanAccessCustomer(pool, req, id))) {
+      return res.status(404).json({ message: 'Customer not found.' });
+    }
     const { members } = req.body;
     const rows = Array.isArray(members) ? members : [];
     await pool.query('DELETE FROM customer_family WHERE customer_id = $1', [id]);

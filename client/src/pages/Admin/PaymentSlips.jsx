@@ -3,6 +3,7 @@ import { getAllInvoicePayments, deleteInvoicePayment, downloadPaymentSlipPdf, ge
 import Loading from '../../components/Loading';
 import PaymentCard from '../../components/PaymentCard';
 import { useToast } from '../../context/ToastContext';
+import { getStoredUser } from '../../utils/auth';
 import {
   RiUserLine, RiMoneyRupeeCircleLine, RiFileList3Line,
   RiArrowDownSLine, RiArrowUpSLine, RiPrinterLine, RiDeleteBin6Line,
@@ -295,7 +296,7 @@ function handleDownloadPdf(payment, toast) {
     .catch(() => toast('PDF download failed', 'error'));
 }
 
-function CustomerCard({ customerName, payments, onReceipt, onDelete, onDownload }) {
+function CustomerCard({ customerName, payments, onReceipt, onDelete, onDownload, showDelete = true }) {
   const [open, setOpen] = useState(false);
   const total = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
   const mobile = payments[0]?.customer_mobile || '';
@@ -375,12 +376,15 @@ function CustomerCard({ customerName, payments, onReceipt, onDelete, onDownload 
                           >
                             <RiDownloadLine className="text-xs" /> PDF
                           </button>
-                          <button
-                            onClick={() => onDelete(p)}
-                            className="p-1.5 text-xs font-medium text-red-500 bg-red-50 hover:bg-red-100 rounded-lg transition"
-                          >
-                            <RiDeleteBin6Line />
-                          </button>
+                          {showDelete && (
+                            <button
+                              type="button"
+                              onClick={() => onDelete(p)}
+                              className="p-1.5 text-xs font-medium text-red-500 bg-red-50 hover:bg-red-100 rounded-lg transition"
+                            >
+                              <RiDeleteBin6Line />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -407,6 +411,7 @@ function CustomerCard({ customerName, payments, onReceipt, onDelete, onDownload 
 /* ---------- Main Page ---------- */
 export default function PaymentSlips() {
   const { toast } = useToast();
+  const isStaff = String(getStoredUser()?.role || '').toLowerCase() === 'staff';
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -545,6 +550,7 @@ export default function PaymentSlips() {
               onReceipt={setSlipModal}
               onDelete={handleDelete}
               onDownload={(p) => handleDownloadPdf(p, toast)}
+              showDelete={!isStaff}
             />
           ))}
         </div>

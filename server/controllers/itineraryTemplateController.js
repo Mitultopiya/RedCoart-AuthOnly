@@ -18,6 +18,14 @@ function buildPlan(days = []) {
   return { totalNights, plan };
 }
 
+async function sanitizeBranchId(value) {
+  if (value == null || value === '') return null;
+  const id = Number(value);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const branch = await pool.query('SELECT id FROM branches WHERE id = $1 LIMIT 1', [id]);
+  return branch.rows.length ? id : null;
+}
+
 async function resolveStateName(input) {
   const direct = String(input?.state_name || input?.state || '').trim();
   if (direct) return direct;
@@ -144,19 +152,22 @@ export const create = async (req, res) => {
     }
 
     const { totalNights, plan } = buildPlan(normalizedDays);
-    const effectiveBranchId = branch_id ? Number(branch_id) : (req.branchId ?? null);
+    const rawBranchId = branch_id ?? req.branchId ?? null;
+    const effectiveBranchId = await sanitizeBranchId(rawBranchId);
 
     const duplicate = await pool.query(
-      `SELECT id FROM itinerary_templates
-       WHERE branch_id IS NOT DISTINCT FROM $1
-       AND LOWER(COALESCE(state_name, '')) = LOWER($2)
-       AND is_active = TRUE
-       AND id IN (
-         SELECT itinerary_id
+      `SELECT t.id
+       FROM itinerary_templates t
+       JOIN (
+         SELECT itinerary_id,
+                GROUP_CONCAT(CONCAT(night_count, 'N ', city_name) ORDER BY day_number SEPARATOR ' / ') AS day_plan
          FROM itinerary_template_days
          GROUP BY itinerary_id
-         HAVING STRING_AGG((night_count::text || 'N ' || city_name), ' / ' ORDER BY day_number) = $3
-       )
+       ) p ON p.itinerary_id = t.id
+       WHERE (($1 IS NULL AND t.branch_id IS NULL) OR t.branch_id = $1)
+         AND LOWER(COALESCE(t.state_name, '')) = LOWER($2)
+         AND t.is_active = TRUE
+         AND p.day_plan = $3
        LIMIT 1`,
       [effectiveBranchId, stateName, plan.replace(/\s\(\d+\sNights\)$/, '')]
     );
@@ -207,7 +218,8 @@ export const update = async (req, res) => {
       return res.status(400).json({ message: 'Each row must have city and nights > 0.' });
     }
     const { totalNights, plan } = buildPlan(normalizedDays);
-    const effectiveBranchId = branch_id ? Number(branch_id) : (req.branchId ?? null);
+    const rawBranchId = branch_id ?? req.branchId ?? null;
+    const effectiveBranchId = await sanitizeBranchId(rawBranchId);
 
     await client.query('BEGIN');
     const updated = await client.query(
@@ -242,19 +254,27 @@ export const update = async (req, res) => {
 };
 
 export const remove = async (req, res) => {
+  const { id } = req.params;
+  const parsedId = Number(id);
+  if (!Number.isFinite(parsedId) || parsedId <= 0) {
+    return res.status(400).json({ message: 'Invalid template id.' });
+  }
+  const client = await pool.connect();
   try {
-    const { id } = req.params;
-    const result = await pool.query(
-      `UPDATE itinerary_templates
-       SET is_active = FALSE, updated_at = NOW()
-       WHERE id = $1
-       RETURNING id`,
-      [Number(id)]
+    await client.query('BEGIN');
+    await client.query('DELETE FROM itinerary_template_days WHERE itinerary_id = $1', [parsedId]);
+    const result = await client.query(
+      `DELETE FROM itinerary_templates WHERE id = $1 RETURNING id`,
+      [parsedId]
     );
+    await client.query('COMMIT');
     if (result.rowCount === 0) return res.status(404).json({ message: 'Itinerary template not found.' });
-    res.json({ message: 'Template disabled.' });
+    res.json({ message: 'Template deleted.' });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('itineraryTemplate.remove:', err.message || err);
     res.status(500).json({ message: 'Server error.' });
+  } finally {
+    client.release();
   }
 };

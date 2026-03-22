@@ -160,10 +160,10 @@ export default function Itinerary() {
   };
 
   const handleDelete = (row) => {
-    if (!window.confirm(`Disable itinerary template "${row.title}"?`)) return;
+    if (!window.confirm(`Permanently delete itinerary template "${row.title}"? This cannot be undone.`)) return;
     deleteItineraryTemplate(row.id)
       .then(() => {
-        toast('Itinerary template disabled');
+        toast('Itinerary template deleted');
         loadTemplates();
       })
       .catch((err) => toast(err.response?.data?.message || 'Delete failed', 'error'));
@@ -213,7 +213,7 @@ export default function Itinerary() {
             actions={(row) => (
               <div className="flex justify-end gap-1.5">
                 <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>Edit</Button>
-                <Button size="sm" variant="danger" onClick={() => handleDelete(row)}>Disable</Button>
+                <Button size="sm" variant="danger" onClick={() => handleDelete(row)}>Delete</Button>
               </div>
             )}
           />

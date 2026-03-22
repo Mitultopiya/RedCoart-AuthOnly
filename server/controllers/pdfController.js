@@ -1,5 +1,18 @@
 import pool from '../config/db.js';
+import { assertStaffOwnsRecord } from '../utils/dataScope.js';
 import { generateItineraryPDF, generateInvoicePDF, generateQuotationPDF, generateInvoiceDocPDF, generatePaymentSlipPDF } from '../services/pdfService.js';
+
+let pdfInvoiceColumnsCache = null;
+async function getPdfInvoiceColumns() {
+  if (pdfInvoiceColumnsCache) return pdfInvoiceColumnsCache;
+  const result = await pool.query(
+    `SELECT COLUMN_NAME
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'invoices'`
+  );
+  pdfInvoiceColumnsCache = new Set((result.rows || []).map((r) => String(r.COLUMN_NAME || r.column_name || '').toLowerCase()));
+  return pdfInvoiceColumnsCache;
+}
 
 export const itinerary = async (req, res) => {
   try {
@@ -22,6 +35,9 @@ export const invoice = async (req, res) => {
     const { id } = req.params;
     const booking = await pool.query('SELECT * FROM bookings WHERE id = $1', [id]);
     if (booking.rows.length === 0) return res.status(404).json({ message: 'Booking not found.' });
+    if (!assertStaffOwnsRecord(req, booking.rows[0].created_by)) {
+      return res.status(404).json({ message: 'Booking not found.' });
+    }
     const customer = await pool.query('SELECT * FROM customers WHERE id = $1', [booking.rows[0].customer_id]);
     const payments = await pool.query('SELECT * FROM payments WHERE booking_id = $1', [id]);
     const total = Number(booking.rows[0].total_amount || 0);
@@ -41,6 +57,9 @@ export const invoiceDocPdf = async (req, res) => {
     const inv = await pool.query('SELECT * FROM invoices WHERE id = $1', [id]);
     if (inv.rows.length === 0) return res.status(404).json({ message: 'Invoice not found.' });
     if (req.branchId && inv.rows[0].branch_id && Number(inv.rows[0].branch_id) !== Number(req.branchId)) {
+      return res.status(403).json({ message: 'Access denied for this invoice.' });
+    }
+    if (!assertStaffOwnsRecord(req, inv.rows[0].created_by)) {
       return res.status(403).json({ message: 'Access denied for this invoice.' });
     }
     const customer = await pool.query('SELECT * FROM customers WHERE id = $1', [inv.rows[0].customer_id]);
@@ -66,9 +85,13 @@ export const invoiceDocPdf = async (req, res) => {
 export const paymentSlipPdf = async (req, res) => {
   try {
     const { id } = req.params; // invoice_payment id
+    const cols = await getPdfInvoiceColumns();
+    const customerGstExpr = cols.has('customer_gst') ? 'i.customer_gst' : "NULL as customer_gst";
+    const placeOfSupplyExpr = cols.has('place_of_supply') ? 'i.place_of_supply' : "NULL as place_of_supply";
+    const companyGstExpr = cols.has('company_gst') ? 'i.company_gst' : "NULL as company_gst";
     const result = await pool.query(
-      `SELECT ip.*, i.invoice_number, i.total as invoice_total, i.company_gst, i.branch_id,
-              i.customer_gst, i.place_of_supply,
+      `SELECT ip.*, i.invoice_number, i.total as invoice_total, ${companyGstExpr}, i.branch_id, i.created_by,
+              ${customerGstExpr}, ${placeOfSupplyExpr},
               c.name as customer_name, c.mobile as customer_mobile, c.email as customer_email
        FROM invoice_payments ip
        JOIN invoices i ON ip.invoice_id = i.id
@@ -78,6 +101,9 @@ export const paymentSlipPdf = async (req, res) => {
     );
     if (result.rows.length === 0) return res.status(404).json({ message: 'Payment not found.' });
     if (req.branchId && result.rows[0].branch_id && Number(result.rows[0].branch_id) !== Number(req.branchId)) {
+      return res.status(403).json({ message: 'Access denied for this payment slip.' });
+    }
+    if (!assertStaffOwnsRecord(req, result.rows[0].created_by)) {
       return res.status(403).json({ message: 'Access denied for this payment slip.' });
     }
     const buf = await generatePaymentSlipPDF(result.rows[0]);

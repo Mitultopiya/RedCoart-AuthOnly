@@ -9,14 +9,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** Load company settings; if branchId set, branch_settings override company_settings */
 async function getCompanySettings(branchId = null) {
   try {
-    const global = await pool.query('SELECT key, value FROM company_settings');
+    const global = await pool.query('SELECT `key`, value FROM company_settings');
     const s = {};
     global.rows.forEach((r) => { s[r.key] = r.value || ''; });
 
     const bid = branchId != null ? parseInt(branchId, 10) : null;
     if (bid) {
-      const branch = await pool.query('SELECT key, value FROM branch_settings WHERE branch_id = $1', [bid]);
-      branch.rows.forEach((r) => { s[r.key] = r.value || ''; });
+      const branch = await pool.query('SELECT `key`, value FROM branch_settings WHERE branch_id = $1', [bid]);
+      branch.rows.forEach((r) => {
+        // Branch setting should override global only when it has a real value.
+        // This preserves global QR/UPI when branch value is blank.
+        const v = r.value == null ? '' : String(r.value).trim();
+        if (v) s[r.key] = v;
+      });
     }
     return {
       name:    s.company_name    || 'Vision Travel Hub',
@@ -44,16 +49,22 @@ async function getCompanySettings(branchId = null) {
 /** Load UPI QR image from uploads/payment/ if upiQrPath is set; returns embedded image or null */
 async function loadUpiQrImage(doc, upiQrPath) {
   if (!upiQrPath || typeof upiQrPath !== 'string') return null;
-  const filename = path.basename(upiQrPath.replace(/^\/+/, '').replace(/^uploads\/payment\/?/, ''));
-  if (!filename) return null;
   const baseDir = path.join(__dirname, '..');
-  const filePath = path.join(baseDir, 'uploads', 'payment', filename);
+  const raw = String(upiQrPath).trim();
+  const filename = path.basename(raw.replace(/^\/+/, '').replace(/^uploads\/payment\/?/, ''));
+  if (!filename) return null;
+  const candidates = [
+    path.join(baseDir, 'uploads', 'payment', filename),
+    path.join(baseDir, raw.replace(/^\/+/, '')),
+  ];
   try {
-    if (!fs.existsSync(filePath)) return null;
+    const filePath = candidates.find((p) => p && fs.existsSync(p));
+    if (!filePath) return null;
     const buf = fs.readFileSync(filePath);
-    const ext = (path.extname(filename) || '').toLowerCase();
-    if (ext === '.png') return await doc.embedPng(buf);
-    return await doc.embedJpg(buf);
+    // Try both decoders so QR still renders even if extension is wrong.
+    try { return await doc.embedPng(buf); } catch (_) {}
+    try { return await doc.embedJpg(buf); } catch (_) {}
+    return null;
   } catch (_) {
     return null;
   }
@@ -1441,7 +1452,8 @@ export async function generateInvoiceDocPDF(invoice, customer = {}, items = [], 
 export async function generatePaymentSlipPDF(payment) {
   payment = payment || {};
 
-  const COMPANY_PDF = await getCompanySettings();
+  // Use branch-scoped settings for receipt QR/UPI when payment belongs to a branch.
+  const COMPANY_PDF = await getCompanySettings(payment.branch_id || null);
 
   const doc = await PDFDocument.create();
   const page = doc.addPage([595, 842]);

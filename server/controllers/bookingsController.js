@@ -1,16 +1,16 @@
 import pool from '../config/db.js';
+import { assertStaffOwnsRecord, staffCanAccessCustomer, staffRequiresCreatorScope } from '../utils/dataScope.js';
 
 export const list = async (req, res) => {
   try {
     const { status, staff_id, page = 1, limit = 20 } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
-    const isStaff = req.user?.role === 'staff';
     const conditions = [];
     const params = [];
     let idx = 1;
     if (status) { params.push(status); conditions.push(`b.status = $${idx++}`); }
     if (staff_id) { params.push(staff_id); conditions.push(`b.assigned_staff_id = $${idx++}`); }
-    if (isStaff) { params.push(req.user.id); conditions.push(`b.assigned_staff_id = $${idx++}`); }
+    if (staffRequiresCreatorScope(req)) { params.push(req.user.id); conditions.push(`b.created_by = $${idx++}`); }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     params.push(Number(limit), offset);
     const result = await pool.query(
@@ -47,6 +47,9 @@ export const getOne = async (req, res) => {
       [id]
     );
     if (booking.rows.length === 0) return res.status(404).json({ message: 'Booking not found.' });
+    if (!assertStaffOwnsRecord(req, booking.rows[0].created_by)) {
+      return res.status(404).json({ message: 'Booking not found.' });
+    }
     const notes = await pool.query('SELECT bn.*, u.name as user_name FROM booking_notes bn LEFT JOIN users u ON bn.user_id = u.id WHERE bn.booking_id = $1 ORDER BY bn.created_at', [id]);
     const payments = await pool.query('SELECT * FROM payments WHERE booking_id = $1 ORDER BY paid_at', [id]);
     res.json({ ...booking.rows[0], notes: notes.rows, payments: payments.rows });
@@ -72,10 +75,16 @@ export const create = async (req, res) => {
       internal_notes,
     } = req.body;
     if (!customer_id || !package_id) return res.status(400).json({ message: 'customer_id and package_id required.' });
+    if (staffRequiresCreatorScope(req)) {
+      if (!(await staffCanAccessCustomer(pool, req, customer_id))) {
+        return res.status(403).json({ message: 'Access denied.' });
+      }
+    }
+    const creatorId = req.user?.id != null ? Number(req.user.id) : null;
     const result = await pool.query(
       `INSERT INTO bookings (customer_id, package_id, travel_start_date, travel_end_date, total_amount, status,
-        assigned_hotel_id, assigned_vehicle_id, assigned_staff_id, assigned_guide_id, internal_notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+        assigned_hotel_id, assigned_vehicle_id, assigned_staff_id, assigned_guide_id, internal_notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
       [
         customer_id,
         package_id,
@@ -88,6 +97,7 @@ export const create = async (req, res) => {
         assigned_staff_id ?? null,
         assigned_guide_id ?? null,
         internal_notes ?? null,
+        creatorId,
       ]
     );
     res.status(201).json(result.rows[0]);
@@ -100,6 +110,11 @@ export const create = async (req, res) => {
 export const update = async (req, res) => {
   try {
     const { id } = req.params;
+    const existing = await pool.query('SELECT id, created_by FROM bookings WHERE id = $1', [id]);
+    if (existing.rows.length === 0) return res.status(404).json({ message: 'Booking not found.' });
+    if (!assertStaffOwnsRecord(req, existing.rows[0].created_by)) {
+      return res.status(404).json({ message: 'Booking not found.' });
+    }
     const { travel_start_date, travel_end_date, assigned_hotel_id, assigned_vehicle_id, assigned_staff_id, assigned_guide_id, status, total_amount, internal_notes } = req.body;
     const result = await pool.query(
       `UPDATE bookings SET
@@ -120,6 +135,11 @@ export const update = async (req, res) => {
 export const addNote = async (req, res) => {
   try {
     const { id } = req.params;
+    const bk = await pool.query('SELECT created_by FROM bookings WHERE id = $1', [id]);
+    if (bk.rows.length === 0) return res.status(404).json({ message: 'Booking not found.' });
+    if (!assertStaffOwnsRecord(req, bk.rows[0].created_by)) {
+      return res.status(404).json({ message: 'Booking not found.' });
+    }
     const { note } = req.body;
     if (!note) return res.status(400).json({ message: 'Note text required.' });
     const result = await pool.query(

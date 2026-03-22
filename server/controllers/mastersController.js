@@ -7,6 +7,22 @@ const tableColumns = {
   activities: ['name', 'description', 'base_price', 'markup_price', 'price', 'month_prices', 'contact', 'city_id', 'image_url'],
 };
 
+async function sanitizeBranchId(value) {
+  if (value == null || value === '') return null;
+  const id = Number(value);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const branch = await pool.query('SELECT id FROM branches WHERE id = $1 LIMIT 1', [id]);
+  return branch.rows.length ? id : null;
+}
+
+function normalizeValue(column, value) {
+  if (value == null) return null;
+  if (column === 'month_prices' && typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return value;
+}
+
 async function list(req, res, table) {
   try {
     const branchId =
@@ -57,8 +73,9 @@ async function create(req, res, table) {
     const cols = [...baseCols, 'branch_id'];
     const body = req.body;
     const isElevated = ['admin', 'super_admin'].includes(req.user?.role);
-    const bid = isElevated ? (body.branch_id ?? req.branchId ?? null) : (req.branchId ?? null);
-    const values = cols.map((c) => (c === 'branch_id' ? bid : (body[c] ?? null)));
+    const rawBranchId = isElevated ? (body.branch_id ?? req.branchId ?? null) : (req.branchId ?? null);
+    const bid = await sanitizeBranchId(rawBranchId);
+    const values = cols.map((c) => (c === 'branch_id' ? bid : normalizeValue(c, body[c])));
     const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
     const result = await pool.query(
       `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) RETURNING *`,
@@ -77,7 +94,7 @@ async function update(req, res, table) {
     const cols = tableColumns[table];
     const body = req.body;
     const setClause = cols.map((c, i) => `${c} = $${i + 1}`).join(', ');
-    const values = cols.map((c) => body[c] !== undefined ? body[c] : null);
+    const values = cols.map((c) => (body[c] !== undefined ? normalizeValue(c, body[c]) : null));
     values.push(id);
     const result = await pool.query(
       `UPDATE ${table} SET ${setClause} WHERE id = $${values.length} RETURNING *`,
@@ -121,7 +138,7 @@ async function remove(req, res, table) {
       await client.query('UPDATE activities SET city_id = NULL WHERE city_id = $1', [itemId]);
       await optionalTxQuery(client, 'UPDATE itinerary_template_days SET city_id = NULL WHERE city_id = $1', [itemId]);
       await optionalTxQuery(client, 'UPDATE itinerary_templates SET state_id = NULL WHERE state_id = $1', [itemId]);
-      await optionalTxQuery(client, 'UPDATE packages SET city_ids = array_remove(city_ids, $1) WHERE city_ids @> ARRAY[$1]::INTEGER[]', [itemId]);
+      await optionalTxQuery(client, 'UPDATE packages SET city_ids = JSON_REMOVE(city_ids, JSON_UNQUOTE(JSON_SEARCH(city_ids, \'one\', CAST($1 AS CHAR)))) WHERE JSON_SEARCH(city_ids, \'one\', CAST($1 AS CHAR)) IS NOT NULL', [itemId]);
     }
 
     if (table === 'hotels') {

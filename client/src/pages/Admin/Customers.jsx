@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   getCustomers,
   getCustomer,
+  getBranches,
   createCustomer,
   updateCustomer,
   deleteCustomer,
@@ -15,11 +16,13 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import { useToast } from '../../context/ToastContext';
-import { branchParams } from '../../utils/branch';
+import { branchParams, getSelectedBranchId } from '../../utils/branch';
+import { getStoredUser } from '../../utils/auth';
 
 const emptyCustomer = { name: '', mobile: '', email: '', address: '', family_count: 0, notes: '' };
 
 export default function Customers() {
+  const isStaff = String(getStoredUser()?.role || '').toLowerCase() === 'staff';
   const { toast } = useToast();
   const [list, setList] = useState({ data: [], total: 0 });
   const [loading, setLoading] = useState(true);
@@ -31,6 +34,13 @@ export default function Customers() {
   const [saving, setSaving] = useState(false);
   const [familyForm, setFamilyForm] = useState({ name: '', relation: '', mobile: '' });
   const [familyRows, setFamilyRows] = useState([]);
+  const [branches, setBranches] = useState([]);
+
+  useEffect(() => {
+    getBranches()
+      .then((r) => setBranches(Array.isArray(r.data) ? r.data : []))
+      .catch(() => {});
+  }, []);
 
   const load = () => {
     setLoading(true);
@@ -48,7 +58,9 @@ export default function Customers() {
   }, [search]);
 
   const openAdd = () => {
-    setForm(emptyCustomer);
+    const selected = getSelectedBranchId();
+    const selectedBranchId = selected && selected !== 'all' ? String(selected) : '';
+    setForm({ ...emptyCustomer, branch_id: selectedBranchId });
     setFamilyRows([]);
     setModal({ open: true, mode: 'add', data: null });
   };
@@ -245,7 +257,9 @@ export default function Customers() {
                       <div className="flex items-center justify-end gap-1.5">
                         <button onClick={() => openDetail(row)} className="px-2.5 py-1 text-xs font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg transition">View</button>
                         <button onClick={() => openEdit(row)} className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition">Edit</button>
-                        <button onClick={() => handleDelete(row)} className="px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition">Delete</button>
+                        {!isStaff && (
+                          <button onClick={() => handleDelete(row)} className="px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition">Delete</button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -274,6 +288,19 @@ export default function Customers() {
             <Input label="Mobile" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
           </div>
           <Input label="Address" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Branch</label>
+            <select
+              value={form.branch_id || ''}
+              onChange={(e) => setForm({ ...form, branch_id: e.target.value })}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="">-- No Branch --</option>
+              {branches.map((b) => (
+                <option key={b.id} value={String(b.id)}>{b.name}</option>
+              ))}
+            </select>
+          </div>
           <Input
             label="Family count"
             type="number"

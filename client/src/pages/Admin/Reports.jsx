@@ -78,6 +78,27 @@ function ChartTooltip({ active, payload, label }) {
   );
 }
 
+/** Booking counts (not currency) — staff performance bar chart */
+function CountChartTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl shadow-lg px-4 py-3 text-xs">
+      <p className="font-semibold text-slate-700 mb-1.5">{label}</p>
+      {payload.map((p) => (
+        <p key={p.name} style={{ color: p.color }} className="mb-0.5">
+          {p.name}: <strong>{Number(p.value ?? 0).toLocaleString('en-IN')}</strong>
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function staffBookingCounts(s) {
+  const done = s.completed_count ?? s.COMPLETED_COUNT;
+  const canc = s.cancelled_count ?? s.CANCELLED_COUNT;
+  return { completed: Number(done ?? 0), cancelled: Number(canc ?? 0) };
+}
+
 /* ── Donut / Pie label ── */
 const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
   if (percent < 0.05) return null;
@@ -111,7 +132,10 @@ export default function Reports() {
     Promise.all([
       getDashboard(params).then((r) => r.data).catch(() => null),
       getPendingPayments(params).then((r) => r.data).catch(() => []),
-      getStaffPerformanceReport(params).then((r) => r.data).catch(() => []),
+      getStaffPerformanceReport(params).then((r) => r.data).catch((err) => {
+        console.error('reports/staff-performance', err?.response?.data || err?.message || err);
+        return [];
+      }),
       getRevenueReportFiltered('', '', branchId !== 'all' ? branchId : undefined).then((r) => r.data).catch(() => []),
     ]).then(([d, p, s, rv]) => {
       setDashboard(d);
@@ -336,23 +360,6 @@ export default function Reports() {
                   </div>
                 </div>
               )}
-            </div>
-          </div>
-
-          {/* Quotation stats */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-            <SectionHeader icon={RiFileList3Line} title="Quotation Stats" />
-            <div className="grid grid-cols-3 gap-4">
-              {[
-                { label: 'Total', val: dashboard?.quotationStats?.total ?? 0, color: 'text-slate-700' },
-                { label: 'Sent', val: dashboard?.quotationStats?.sent ?? 0, color: 'text-cyan-600' },
-                { label: 'Approved', val: dashboard?.quotationStats?.approved ?? 0, color: 'text-emerald-600' },
-              ].map((q) => (
-                <div key={q.label} className="text-center py-3 rounded-xl bg-slate-50">
-                  <p className={`text-2xl font-bold ${q.color}`}>{q.val}</p>
-                  <p className="text-xs text-slate-500 mt-1">{q.label}</p>
-                </div>
-              ))}
             </div>
           </div>
         </div>
@@ -614,11 +621,14 @@ export default function Reports() {
               <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
                 <SectionHeader icon={RiBarChartLine} title="Staff Booking Performance" />
                 <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={staffPerf.map(s => ({ name: s.name?.split(' ')[0] || '-', Completed: Number(s.completed_count || 0), Cancelled: Number(s.cancelled_count || 0) }))} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                  <BarChart data={staffPerf.map((s) => {
+                    const { completed, cancelled } = staffBookingCounts(s);
+                    return { name: s.name?.split(' ')[0] || '-', Completed: completed, Cancelled: cancelled };
+                  })} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={32} />
-                    <Tooltip content={<ChartTooltip />} />
+                    <Tooltip content={<CountChartTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
                     <Bar dataKey="Completed" fill="#0d9488" radius={[3, 3, 0, 0]} maxBarSize={30} />
                     <Bar dataKey="Cancelled" fill="#f87171" radius={[3, 3, 0, 0]} maxBarSize={30} />
@@ -641,8 +651,9 @@ export default function Reports() {
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {staffPerf.map((s, i) => {
-                        const total = Number(s.completed_count || 0) + Number(s.cancelled_count || 0);
-                        const pct = total > 0 ? Math.round((Number(s.completed_count || 0) / total) * 100) : 0;
+                        const { completed, cancelled } = staffBookingCounts(s);
+                        const total = completed + cancelled;
+                        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
                         return (
                           <tr key={s.id || i} className="hover:bg-teal-50/30 transition-colors">
                             <td className="px-5 py-4">
@@ -658,10 +669,10 @@ export default function Reports() {
                             </td>
                             <td className="px-5 py-4 text-sm text-slate-500">{s.branch_name || s.branch || '-'}</td>
                             <td className="px-5 py-4 text-center">
-                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 text-sm font-bold">{s.completed_count || 0}</span>
+                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 text-sm font-bold">{completed}</span>
                             </td>
                             <td className="px-5 py-4 text-center">
-                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-500 text-sm font-bold">{s.cancelled_count || 0}</span>
+                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-500 text-sm font-bold">{cancelled}</span>
                             </td>
                             <td className="px-5 py-4">
                               <div className="flex items-center gap-2">

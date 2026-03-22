@@ -6,8 +6,8 @@ const router = express.Router();
 
 router.get('/', verifyToken, anyAuth, c.list);
 router.get('/:id', verifyToken, anyAuth, c.getOne);
-router.post('/', verifyToken, adminOrManager, c.create);
-router.put('/:id', verifyToken, adminOrManager, c.update);
+router.post('/', verifyToken, anyAuth, c.create);
+router.put('/:id', verifyToken, anyAuth, c.update);
 router.post('/:id/notes', verifyToken, anyAuth, c.addNote);
 
 export default router;

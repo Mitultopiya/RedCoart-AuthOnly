@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
+    "migrate:export-pg": "node migrations/export_pg_to_mysql.js",
     "postinstall": "npx puppeteer browsers install chrome"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
     "express-validator": "^7.0.1",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.15.2",
     "pg": "^8.11.3",
     "pdf-lib": "^1.17.1",
     "puppeteer": "^24.39.1"
