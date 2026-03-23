@@ -22,7 +22,9 @@ import { getStoredUser } from '../../utils/auth';
 const emptyCustomer = { name: '', mobile: '', email: '', address: '', family_count: 0, notes: '' };
 
 export default function Customers() {
-  const isStaff = String(getStoredUser()?.role || '').toLowerCase() === 'staff';
+  const currentUser = getStoredUser();
+  const isStaff = String(currentUser?.role || '').toLowerCase() === 'staff';
+  const staffBranchId = currentUser?.branch_id != null ? String(currentUser.branch_id) : '';
   const { toast } = useToast();
   const [list, setList] = useState({ data: [], total: 0 });
   const [loading, setLoading] = useState(true);
@@ -37,10 +39,11 @@ export default function Customers() {
   const [branches, setBranches] = useState([]);
 
   useEffect(() => {
+    if (isStaff) return;
     getBranches()
       .then((r) => setBranches(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
-  }, []);
+  }, [isStaff]);
 
   const load = () => {
     setLoading(true);
@@ -59,7 +62,9 @@ export default function Customers() {
 
   const openAdd = () => {
     const selected = getSelectedBranchId();
-    const selectedBranchId = selected && selected !== 'all' ? String(selected) : '';
+    const selectedBranchId = isStaff
+      ? staffBranchId
+      : (selected && selected !== 'all' ? String(selected) : '');
     setForm({ ...emptyCustomer, branch_id: selectedBranchId });
     setFamilyRows([]);
     setModal({ open: true, mode: 'add', data: null });
@@ -74,7 +79,7 @@ export default function Customers() {
           mobile: c.mobile || '',
           email: c.email || '',
           address: c.address || '',
-          branch_id: c.branch_id ? String(c.branch_id) : '',
+          branch_id: isStaff ? staffBranchId : (c.branch_id ? String(c.branch_id) : ''),
           family_count: c.family_count ?? (Array.isArray(c.family) ? c.family.length : 0),
           notes: c.notes || '',
         });
@@ -90,7 +95,7 @@ export default function Customers() {
           mobile: row.mobile || '',
           email: row.email || '',
           address: row.address || '',
-          branch_id: row.branch_id ? String(row.branch_id) : '',
+          branch_id: isStaff ? staffBranchId : (row.branch_id ? String(row.branch_id) : ''),
           family_count: row.family_count ?? 0,
           notes: row.notes || '',
         });
@@ -133,7 +138,7 @@ export default function Customers() {
     const payload = {
       ...form,
       family_count: Number(form.family_count) || 0,
-      branch_id: form.branch_id ? Number(form.branch_id) : undefined,
+      branch_id: (isStaff ? staffBranchId : form.branch_id) ? Number(isStaff ? staffBranchId : form.branch_id) : undefined,
     };
     if (modal.mode === 'add') {
       createCustomer(payload)
@@ -288,19 +293,21 @@ export default function Customers() {
             <Input label="Mobile" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
           </div>
           <Input label="Address" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Branch</label>
-            <select
-              value={form.branch_id || ''}
-              onChange={(e) => setForm({ ...form, branch_id: e.target.value })}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            >
-              <option value="">-- No Branch --</option>
-              {branches.map((b) => (
-                <option key={b.id} value={String(b.id)}>{b.name}</option>
-              ))}
-            </select>
-          </div>
+          {!isStaff && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Branch</label>
+              <select
+                value={form.branch_id || ''}
+                onChange={(e) => setForm({ ...form, branch_id: e.target.value })}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">-- No Branch --</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={String(b.id)}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <Input
             label="Family count"
             type="number"

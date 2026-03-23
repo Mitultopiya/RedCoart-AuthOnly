@@ -14,6 +14,7 @@ import {
   getActivities,
   getItineraryTemplates,
   getStaff,
+  getTransports,
   getVehicles,
   getCompanySettings,
   downloadInvoicePdf,
@@ -82,7 +83,7 @@ const getPaxUnits = (couples, adults, children) => {
   const c = Number(couples || 0);
   const a = Number(adults || 0);
   const ch = Number(children || 0);
-  return (c * 2) + (a * 0.5) + (ch * 0.25);
+  return (c * 2) + a + (ch * 0.5);
 };
 
 const parseItinerary = (value) => {
@@ -144,10 +145,12 @@ export default function Invoices() {
   const [cities, setCities] = useState([]);
   const [hotels, setHotels] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [transportsMaster, setTransportsMaster] = useState([]);
   const [activityMasters, setActivityMasters] = useState([]);
   const [hotelStarFilter, setHotelStarFilter] = useState('');
   const [hotelInfoRows, setHotelInfoRows] = useState([]);
   const [transfers, setTransfers] = useState([{ vehicle: '', quantity: '1' }]);
+  const [transports, setTransports] = useState([{ transport: '', quantity: '1' }]);
   const [activities, setActivities] = useState([{ activity: '' }]);
   const [staff, setStaff] = useState([]);
   const [branchId, setBranchId] = useState(() => getSelectedBranchId());
@@ -208,6 +211,7 @@ export default function Invoices() {
     getCities(params).then((r) => setCities(r.data || [])).catch(() => setCities([]));
     getHotels(params).then((r) => setHotels(r.data || [])).catch(() => setHotels([]));
     getVehicles(params).then((r) => setVehicles(r.data || [])).catch(() => setVehicles([]));
+    getTransports(params).then((r) => setTransportsMaster(r.data || [])).catch(() => setTransportsMaster([]));
     getActivities(params).then((r) => setActivityMasters(r.data || [])).catch(() => setActivityMasters([]));
     const role = String(user?.role || '').toLowerCase();
     if (role === 'staff') {
@@ -271,6 +275,7 @@ export default function Invoices() {
     setHotelStarFilter('');
     setHotelInfoRows([]);
     setTransfers([{ vehicle: '', quantity: '1' }]);
+    setTransports([{ transport: '', quantity: '1' }]);
     setActivities([{ activity: '' }]);
     setModal({ open: true });
   };
@@ -322,6 +327,7 @@ export default function Invoices() {
         });
         setHotelStarFilter('');
         setTransfers([{ vehicle: '', quantity: '1' }]);
+        setTransports([{ transport: '', quantity: '1' }]);
         setActivities([{ activity: '' }]);
         setEditingId(inv.id);
         setModal({ open: true });
@@ -475,6 +481,12 @@ export default function Invoices() {
     () => Object.fromEntries((activityMasters || []).map((a) => [String(a.name || '').toLowerCase(), Number(a.price || 0)])),
     [activityMasters]
   );
+  const transportOptions = useMemo(
+    () => (transportsMaster || [])
+      .filter((t) => t?.transport_type && t?.from_location && t?.to_location)
+      .map((t) => `${t.transport_type}: ${t.from_location} -> ${t.to_location}`),
+    [transportsMaster]
+  );
   useEffect(() => {
     if (form.hotel_category && !hotelCategoryOptions.includes(form.hotel_category)) {
       setForm((prev) => ({ ...prev, hotel_category: '' }));
@@ -496,6 +508,21 @@ export default function Invoices() {
     const nightsByLocation = Object.fromEntries(selectedStops.map((s) => [String(s.location || '').toLowerCase(), Number(s.nights || 0)]));
     const hotelByName = Object.fromEntries((hotels || []).map((h) => [String(h.name || '').toLowerCase(), h]));
     const vehicleRateByName = Object.fromEntries((vehicles || []).map((v) => [String(v.name || '').toLowerCase(), Number(v.price || 0)]));
+    const travelMonth = form.travel_start_date
+      ? new Date(form.travel_start_date).toLocaleString('en-US', { month: 'long' })
+      : (form.invoice_date ? new Date(form.invoice_date).toLocaleString('en-US', { month: 'long' }) : '');
+    const transportRateByLabel = Object.fromEntries((transportsMaster || [])
+      .filter((t) => t?.transport_type && t?.from_location && t?.to_location)
+      .map((t) => {
+        const label = `${t.transport_type}: ${t.from_location} -> ${t.to_location}`;
+        const monthPrice = t.month_prices && typeof t.month_prices === 'object'
+          ? t.month_prices[travelMonth]
+          : null;
+        const rate = monthPrice != null && monthPrice !== ''
+          ? Number(monthPrice || 0)
+          : Number(t.price || 0);
+        return [String(label).toLowerCase(), rate];
+      }));
     const activityRateByName = Object.fromEntries((activityMasters || []).map((a) => [String(a.name || '').toLowerCase(), Number(a.price || 0)]));
 
     const couples = Number(form.couples || 0);
@@ -534,6 +561,21 @@ export default function Invoices() {
         };
       });
 
+    const personUnits = Math.max(1, getPaxUnits(couples, adults, children));
+    const transportItems = (transports || [])
+      .filter((t) => t.transport)
+      .map((t) => {
+        const qty = Number(t.quantity || 1);
+        const rate = Number(transportRateByLabel[String(t.transport || '').toLowerCase()] || 0);
+        const amount = qty * rate * personUnits;
+        return {
+          description: `Transport: ${t.transport}`,
+          quantity: String(qty * personUnits),
+          rate: String(rate),
+          amount: String(amount),
+        };
+      });
+
     const activityItems = (activities || [])
       .filter((a) => a.activity)
       .map((a) => {
@@ -551,7 +593,7 @@ export default function Invoices() {
       ? [{ description: 'Markup', quantity: '1', rate: String(markupValue), amount: String(markupValue) }]
       : [];
 
-    const autoItems = [...hotelItems, ...transferItems, ...activityItems, ...markupItem];
+    const autoItems = [...hotelItems, ...transferItems, ...transportItems, ...activityItems, ...markupItem];
     setForm((prev) => ({ ...prev, items: autoItems.length ? autoItems : [emptyItem()] }));
   }, [
     selectedStops,
@@ -560,12 +602,14 @@ export default function Invoices() {
     activityMasters,
     hotelInfoRows,
     transfers,
+    transports,
     activities,
     form.couples,
     form.adults,
     form.children,
     form.nights,
     form.travel_start_date,
+    form.invoice_date,
     form.travel_end_date,
     form.markup,
   ]);
@@ -585,6 +629,7 @@ export default function Invoices() {
       `- Passengers: Couples ${form.couples || '0'}, Adults ${form.adults || '0'}, Children ${form.children || '0'}`,
       `- Hotels: ${hotelInfoRows.map((r) => `${r.location}: ${r.hotel || '-'}, Meal ${r.meal || '-'}`).join(' | ') || '-'}`,
       `- Transfers: ${transfers.map((t) => `${t.vehicle || '-'} x ${t.quantity || '1'}`).join(' | ') || '-'}`,
+      `- Transport: ${transports.map((t) => `${t.transport || '-'} x ${t.quantity || '1'}`).join(' | ') || '-'}`,
       `- Activities: ${activities.map((a) => a.activity || '-').join(' | ') || '-'}`,
       `- Markup: ${form.markup || '0'}`,
       `- Company: ${form.company_name || '-'} (${form.company_contact || '-'})`,
@@ -606,6 +651,7 @@ export default function Invoices() {
     form.company_contact,
     hotelInfoRows,
     transfers,
+    transports,
     activities,
   ]);
   useEffect(() => {
@@ -969,6 +1015,32 @@ export default function Invoices() {
                   setForm((prev) => recalcPackageItems({ ...prev, travel_end_date: e.target.value }))
                 }
               />
+            </div>
+          </Card>
+
+          <Card>
+            <h3 className="text-sm font-semibold text-slate-700 mb-3">Transport Details</h3>
+            <div className="space-y-2">
+              {transports.map((row, idx) => (
+                <div key={`tr-${idx}`} className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <select
+                    value={row.transport}
+                    onChange={(e) => setTransports((prev) => prev.map((r, i) => (i === idx ? { ...r, transport: e.target.value } : r)))}
+                    className="h-10 rounded-lg border border-slate-300 px-3 text-sm"
+                  >
+                    <option value="">Select transport</option>
+                    {transportOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    value={row.quantity}
+                    onChange={(e) => setTransports((prev) => prev.map((r, i) => (i === idx ? { ...r, quantity: e.target.value } : r)))}
+                    className="h-10 rounded-lg border border-slate-300 px-3 text-sm"
+                  />
+                  <Button type="button" variant="secondary" onClick={() => setTransports((prev) => [...prev, { transport: '', quantity: '1' }])}>Add</Button>
+                </div>
+              ))}
             </div>
           </Card>
 

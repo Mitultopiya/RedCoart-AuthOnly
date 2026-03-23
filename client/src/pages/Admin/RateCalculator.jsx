@@ -5,6 +5,7 @@ import {
   getCities,
   getHotels,
   getItineraryTemplates,
+  getTransports,
   getVehicles,
 } from '../../services/api';
 import { branchParams } from '../../utils/branch';
@@ -13,6 +14,7 @@ import TripDetails from './RateCalculator/TripDetails';
 import PassengerDetails from './RateCalculator/PassengerDetails';
 import HotelInfo from './RateCalculator/HotelInfo';
 import TransferDetails from './RateCalculator/TransferDetails';
+import TransportDetails from './RateCalculator/TransportDetails';
 import Activity from './RateCalculator/Activity';
 import OtherSection from './RateCalculator/OtherSection';
 
@@ -58,10 +60,12 @@ function buildPackageInfoText({
   passenger,
   hotelRows,
   transfers,
+  transports,
   activities,
   other,
   hotelsMaster,
   vehiclesMaster,
+  transportsMaster,
   activitiesMaster,
 }) {
   const totalNights = stops.reduce((sum, s) => sum + Number(s.nights || 0), 0);
@@ -83,6 +87,21 @@ function buildPackageInfoText({
   (vehiclesMaster || []).forEach((v) => {
     if (!v?.name) return;
     vehiclePriceMap[String(v.name).toLowerCase()] = Number(v.price || 0);
+  });
+  const transportPriceMap = {};
+  const travelMonth = passenger.travelDate
+    ? new Date(passenger.travelDate).toLocaleString('en-US', { month: 'long' })
+    : '';
+  (transportsMaster || []).forEach((t) => {
+    if (!t?.transport_type || !t?.from_location || !t?.to_location) return;
+    const key = `${t.transport_type}: ${t.from_location} -> ${t.to_location}`;
+    const monthPrice = t.month_prices && typeof t.month_prices === 'object'
+      ? t.month_prices[travelMonth]
+      : null;
+    const rate = monthPrice != null && monthPrice !== ''
+      ? Number(monthPrice || 0)
+      : Number(t.price || 0);
+    transportPriceMap[String(key).toLowerCase()] = rate;
   });
   const activityPriceMap = {};
   (activitiesMaster || []).forEach((a) => {
@@ -130,6 +149,25 @@ function buildPackageInfoText({
     .map((t, idx) => `${idx + 1}) ${t.vehicle} x ${t.qty} x ${Math.max(1, totalDays)} day(s)`)
     .join('\n') || '-';
 
+  const transportDetails = (transports || [])
+    .filter((t) => t.transport)
+    .map((t) => {
+      const qty = Number(t.quantity || 1);
+      const rate = transportPriceMap[String(t.transport || '').toLowerCase()] || 0;
+      // One-time transport charge per person weight:
+      // couple = 2x, adult = 1x, child = 0.5x
+      const coupleUnits = Number(passenger.couples || 0) * 2;
+      const adultUnits = Number(passenger.adults || 0);
+      const childUnits = Number(passenger.children || 0) * 0.5;
+      const personUnits = Math.max(1, coupleUnits + adultUnits + childUnits);
+      const amount = qty * rate * personUnits;
+      return { ...t, qty, rate, amount, personUnits };
+    });
+  const transportTotal = transportDetails.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const transportLines = transportDetails
+    .map((t, idx) => `${idx + 1}) ${t.transport}`)
+    .join('\n') || '-';
+
   const activityDetails = (activities || [])
     .filter((a) => a.activity)
     .map((a) => {
@@ -142,7 +180,7 @@ function buildPackageInfoText({
     .map((a, idx) => `${idx + 1}) ${a.activity}`)
     .join('\n') || '-';
 
-  const subtotal = hotelTotal + transferTotal + activityTotal;
+  const subtotal = hotelTotal + transferTotal + transportTotal + activityTotal;
   const markupValue = Number(other.markup || 0);
   const grandTotal = subtotal + markupValue;
 
@@ -165,6 +203,7 @@ function buildPackageInfoText({
     `🏢 Company: ${other.companyName || '-'}\n\n` +
     `🏨 Hotels:\n${hotels}\n\n` +
     `🚕 Transfers:\n${transferLines}\n\n` +
+    `✈️ Transport:\n${transportLines}\n\n` +
     `🎯 Activities:\n${activityLines}\n\n` +
     `💰 PRICE SUMMARY:\n` +
     `- GRAND TOTAL: ${inr(grandTotal)}`
@@ -187,6 +226,7 @@ export default function RateCalculator() {
     children: '0',
   });
   const [transfers, setTransfers] = useState([{ vehicle: '', quantity: '1' }]);
+  const [transports, setTransports] = useState([{ transport: '', quantity: '1' }]);
   const [activities, setActivities] = useState([{ activity: '' }]);
   const [other, setOther] = useState({
     markup: '0',
@@ -199,6 +239,7 @@ export default function RateCalculator() {
   const [cities, setCities] = useState([]);
   const [hotels, setHotels] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [transportsMaster, setTransportsMaster] = useState([]);
   const [activityMasters, setActivityMasters] = useState([]);
   const [draftLoaded, setDraftLoaded] = useState(false);
 
@@ -216,6 +257,7 @@ export default function RateCalculator() {
         if (draft?.trip) setTrip(draft.trip);
         if (draft?.passenger) setPassenger(draft.passenger);
         if (Array.isArray(draft?.transfers)) setTransfers(draft.transfers);
+        if (Array.isArray(draft?.transports)) setTransports(draft.transports);
         if (Array.isArray(draft?.activities)) setActivities(draft.activities);
         if (draft?.other) setOther(draft.other);
         if (Array.isArray(draft?.hotelInfoRows)) setHotelInfoRows(draft.hotelInfoRows);
@@ -233,12 +275,13 @@ export default function RateCalculator() {
       trip,
       passenger,
       transfers,
+      transports,
       activities,
       other,
       hotelInfoRows,
     };
     sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
-  }, [trip, passenger, transfers, activities, other, hotelInfoRows, draftLoaded]);
+  }, [trip, passenger, transfers, transports, activities, other, hotelInfoRows, draftLoaded]);
 
   useEffect(() => {
     const params = branchParams('all');
@@ -247,10 +290,11 @@ export default function RateCalculator() {
       getCities(params),
       getHotels(params),
       getVehicles(params),
+      getTransports(params),
       getActivities(params),
     ])
       .then((results) => {
-        const [itinerariesRes, citiesRes, hotelsRes, vehiclesRes, activitiesRes] = results;
+        const [itinerariesRes, citiesRes, hotelsRes, vehiclesRes, transportsRes, activitiesRes] = results;
         setItineraryTemplates(
           itinerariesRes.status === 'fulfilled'
             ? (itinerariesRes.value.data || []).filter((t) => t.is_active)
@@ -259,6 +303,7 @@ export default function RateCalculator() {
         setCities(citiesRes.status === 'fulfilled' ? (citiesRes.value.data || []) : []);
         setHotels(hotelsRes.status === 'fulfilled' ? (hotelsRes.value.data || []) : []);
         setVehicles(vehiclesRes.status === 'fulfilled' ? (vehiclesRes.value.data || []) : []);
+        setTransportsMaster(transportsRes.status === 'fulfilled' ? (transportsRes.value.data || []) : []);
         setActivityMasters(activitiesRes.status === 'fulfilled' ? (activitiesRes.value.data || []) : []);
       });
   }, []);
@@ -339,6 +384,12 @@ export default function RateCalculator() {
     () => [...new Set(vehicles.map((v) => v.name).filter(Boolean))],
     [vehicles]
   );
+  const transportOptions = useMemo(
+    () => (transportsMaster || [])
+      .filter((t) => t?.transport_type && t?.from_location && t?.to_location)
+      .map((t) => `${t.transport_type}: ${t.from_location} -> ${t.to_location}`),
+    [transportsMaster]
+  );
   const activityOptions = useMemo(
     () => [...new Set(activityMasters.map((a) => a.name).filter(Boolean))],
     [activityMasters]
@@ -382,10 +433,12 @@ export default function RateCalculator() {
       passenger,
       hotelRows: hotelInfoRows,
       transfers,
+      transports,
       activities,
       other,
       hotelsMaster: hotels,
       vehiclesMaster: vehicles,
+      transportsMaster,
       activitiesMaster: activityMasters,
     });
     if (typeof window !== 'undefined') {
@@ -421,6 +474,8 @@ export default function RateCalculator() {
       />
 
       <PassengerDetails form={passenger} setForm={setPassenger} />
+
+      <TransportDetails transports={transports} setTransports={setTransports} transportOptions={transportOptions} />
 
       <HotelInfo
         rows={hotelInfoRows}

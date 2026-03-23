@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getQuotations, getQuotation, createQuotation, updateQuotation, deleteQuotation, getCustomers, getPackages, getHotels, getVehicles, getCompanySettings, convertQuotationToBooking, downloadQuotationPdf } from '../../services/api';
+import { getQuotations, getQuotation, createQuotation, updateQuotation, deleteQuotation, getCustomers, getPackages, getHotels, getVehicles, getTransports, getCompanySettings, convertQuotationToBooking, downloadQuotationPdf } from '../../services/api';
 import Loading from '../../components/Loading';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -27,11 +27,13 @@ export default function Quotations() {
   const [packages, setPackages] = useState([]);
   const [hotels, setHotels] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [transports, setTransports] = useState([]);
   const [form, setForm] = useState({
     customer_id: '',
     package_id: '',
     hotel_id: '',
     vehicle_id: '',
+    transport_id: '',
     valid_until: '',
     family_count: '1',
     trip_days: '',
@@ -57,6 +59,7 @@ export default function Quotations() {
     getPackages().then((r) => setPackages(r.data || [])).catch(() => {});
     getHotels().then((r) => setHotels(r.data || [])).catch(() => {});
     getVehicles().then((r) => setVehicles(r.data || [])).catch(() => {});
+    getTransports().then((r) => setTransports(r.data || [])).catch(() => {});
     getCompanySettings().then((r) => setPaymentSettings(r.data || {})).catch(() => {});
   }, []);
 
@@ -85,6 +88,7 @@ export default function Quotations() {
       package_id: '',
       hotel_id: '',
       vehicle_id: '',
+      transport_id: '',
       valid_until: '',
       family_count: '1',
       trip_days: '',
@@ -107,6 +111,7 @@ export default function Quotations() {
           package_id: q.package_id ? String(q.package_id) : '',
           hotel_id: '',
           vehicle_id: '',
+          transport_id: '',
           valid_until: q.valid_until ? String(q.valid_until).slice(0, 10) : '',
           family_count: q.family_count != null ? String(q.family_count) : '1',
           trip_days: '',
@@ -170,6 +175,25 @@ export default function Quotations() {
   const vehicleOptions = packageCityIds.length
     ? vehicles.filter((v) => !v.city_id || packageCityIds.includes(Number(v.city_id)))
     : vehicles;
+
+  const getMonthNameFromDate = (dateStr) => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleString('en-US', { month: 'long' });
+  };
+
+  const getTransportDayPrice = (transport) => {
+    if (!transport) return 0;
+    const month = getMonthNameFromDate(form.valid_until);
+    const monthPrices = transport.month_prices && typeof transport.month_prices === 'object'
+      ? transport.month_prices
+      : null;
+    if (month && monthPrices && monthPrices[month] != null && monthPrices[month] !== '') {
+      return Number(monthPrices[month]) || 0;
+    }
+    return Number(transport.price || 0);
+  };
 
   const packageItemFromId = (packageId) => {
     const pkg = packages.find((p) => p.id === Number(packageId));
@@ -262,6 +286,27 @@ export default function Quotations() {
         price: v ? String(Number(v.price || 0)) : items[idx].price,
       };
       return { ...f, vehicle_id: vehicleId, items };
+    });
+  };
+
+  const handleTransportChange = (transportId) => {
+    setForm((f) => {
+      const t = transports.find((x) => String(x.id) === String(transportId));
+      const items = [...(f.items || [])];
+      let idx = items.findIndex((it) => it.item === 'Transport' || (it.description || '').startsWith('Transport:'));
+      if (idx === -1) {
+        items.push({ item: 'Transport', description: '', qty: '1', price: '' });
+        idx = items.length - 1;
+      }
+      const route = t ? `${t.from_location} -> ${t.to_location}` : 'Transport';
+      items[idx] = {
+        ...items[idx],
+        item: 'Transport',
+        description: `Transport: ${route}`,
+        qty: String(Number(f.trip_days) || 1),
+        price: t ? String(getTransportDayPrice(t)) : items[idx].price,
+      };
+      return { ...f, transport_id: transportId, items };
     });
   };
 
@@ -408,7 +453,7 @@ export default function Quotations() {
           {/* Section A – Basic Information */}
           <Card>
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Basic Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Customer *</label>
                 <select
@@ -453,6 +498,9 @@ export default function Quotations() {
                           return { ...it, qty: String(days) };
                         }
                         if (it.item === 'Vehicle' || (it.description || '').startsWith('Vehicle:')) {
+                          return { ...it, qty: String(days) };
+                        }
+                        if (it.item === 'Transport' || (it.description || '').startsWith('Transport:')) {
                           return { ...it, qty: String(days) };
                         }
                         return it;
@@ -515,6 +563,21 @@ export default function Quotations() {
                   {vehicleOptions.map((v) => (
                     <option key={v.id} value={v.id}>
                       {v.name} {v.price != null ? `— ₹${Number(v.price || 0).toLocaleString()}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Transport (optional)</label>
+                <select
+                  value={form.transport_id}
+                  onChange={(e) => handleTransportChange(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">— Select Transport —</option>
+                  {transports.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.transport_type}: {t.from_location} → {t.to_location} {t.price != null ? `— ₹${Number(t.price || 0).toLocaleString()}/day` : ''}
                     </option>
                   ))}
                 </select>

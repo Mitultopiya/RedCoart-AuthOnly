@@ -9,6 +9,7 @@ router.use(branchScope);
 router.get('/cities', anyAuth, m.listCities);
 router.get('/hotels', anyAuth, m.listHotels);
 router.get('/vehicles', anyAuth, m.listVehicles);
+router.get('/transports', anyAuth, m.listTransports);
 router.get('/activities', anyAuth, m.listActivities);
 
 router.use(adminOrManager);
@@ -36,6 +37,10 @@ router.delete('/hotels/:id', m.removeHotel);
 router.post('/vehicles', m.createVehicle);
 router.put('/vehicles/:id', m.updateVehicle);
 router.delete('/vehicles/:id', m.removeVehicle);
+
+router.post('/transports', m.createTransport);
+router.put('/transports/:id', m.updateTransport);
+router.delete('/transports/:id', m.removeTransport);
 
 router.post('/activities', m.createActivity);
 router.put('/activities/:id', m.updateActivity);

@@ -4,6 +4,7 @@ const tableColumns = {
   cities: ['name', 'country'],
   hotels: ['name', 'city_id', 'address', 'contact', 'room_type', 'extra_adult_price', 'price', 'base_price', 'markup_price', 'month_prices'],
   vehicles: ['name', 'type', 'capacity', 'price', 'base_price', 'markup_price', 'month_prices', 'contact', 'city_id'],
+  transports: ['transport_type', 'from_location', 'to_location', 'base_price', 'markup_price', 'price', 'month_prices'],
   activities: ['name', 'description', 'base_price', 'markup_price', 'price', 'month_prices', 'contact', 'city_id', 'image_url'],
 };
 
@@ -151,6 +152,9 @@ async function remove(req, res, table) {
       await optionalTxQuery(client, 'UPDATE packages SET default_vehicle_id = NULL WHERE default_vehicle_id = $1', [itemId]);
       await optionalTxQuery(client, 'UPDATE bookings SET assigned_vehicle_id = NULL WHERE assigned_vehicle_id = $1', [itemId]);
     }
+    if (table === 'transports') {
+      await optionalTxQuery(client, 'UPDATE bookings SET assigned_transport_id = NULL WHERE assigned_transport_id = $1', [itemId]);
+    }
 
     const result = await client.query(`DELETE FROM ${table} WHERE id = $1 RETURNING id`, [itemId]);
     if (result.rowCount === 0) return res.status(404).json({ message: 'Not found.' });
@@ -186,6 +190,11 @@ export const listVehicles = (req, res) => list(req, res, 'vehicles');
 export const createVehicle = (req, res) => create(req, res, 'vehicles');
 export const updateVehicle = (req, res) => update(req, res, 'vehicles');
 export const removeVehicle = (req, res) => remove(req, res, 'vehicles');
+
+export const listTransports = (req, res) => list(req, res, 'transports');
+export const createTransport = (req, res) => create(req, res, 'transports');
+export const updateTransport = (req, res) => update(req, res, 'transports');
+export const removeTransport = (req, res) => remove(req, res, 'transports');
 
 export const listActivities = (req, res) => list(req, res, 'activities');
 export const createActivity = (req, res) => create(req, res, 'activities');

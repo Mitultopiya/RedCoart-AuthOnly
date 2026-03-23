@@ -20,6 +20,7 @@ import AdminSettings from './pages/Admin/Settings';
 import AdminCities from './pages/Admin/Masters/Cities';
 import AdminHotels from './pages/Admin/Masters/Hotels';
 import AdminVehicles from './pages/Admin/Masters/Vehicles';
+import AdminTransports from './pages/Admin/Masters/Transports';
 import AdminActivities from './pages/Admin/Masters/Activities';
 import StaffDashboard from './pages/Staff/Dashboard';
 import StaffMyBookings from './pages/Staff/MyBookings';
@@ -60,6 +61,7 @@ function App() {
         <Route path="package-builder/:id" element={<Navigate to="/admin" replace />} />
         <Route path="bookings" element={<AdminBookings />} />
         <Route path="itinerary" element={<AdminItinerary />} />
+        <Route path="transport" element={<AdminTransports />} />
         <Route path="rate-calculator" element={<AdminRateCalculator />} />
         <Route path="rate-calculator/preview" element={<AdminRateCalculatorPreview />} />
         <Route path="preferred-items" element={<AdminPreferredItems />} />
@@ -71,6 +73,7 @@ function App() {
         <Route path="masters/cities" element={<AdminCities />} />
         <Route path="masters/hotels" element={<AdminHotels />} />
         <Route path="masters/vehicles" element={<AdminVehicles />} />
+        <Route path="masters/transports" element={<AdminTransports />} />
         <Route path="masters/activities" element={<AdminActivities />} />
         <Route path="settings" element={<AdminSettings />} />
         <Route path="settings/:section" element={<AdminSettings />} />

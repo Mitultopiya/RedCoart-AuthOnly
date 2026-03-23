@@ -15,10 +15,12 @@ export const list = async (req, res) => {
     params.push(Number(limit), offset);
     const result = await pool.query(
       `SELECT b.*, c.name as customer_name, c.email as customer_email, c.mobile as customer_mobile,
-              p.name as package_name, p.price as package_price
+              p.name as package_name, p.price as package_price, t.transport_type, t.from_location, t.to_location,
+              t.price as transport_price
        FROM bookings b
        LEFT JOIN customers c ON b.customer_id = c.id
        LEFT JOIN packages p ON b.package_id = p.id
+       LEFT JOIN transports t ON b.assigned_transport_id = t.id
        ${where}
        ORDER BY b.created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`,
       params
@@ -39,10 +41,12 @@ export const getOne = async (req, res) => {
     const { id } = req.params;
     const booking = await pool.query(
       `SELECT b.*, c.name as customer_name, c.email as customer_email, c.mobile as customer_mobile, c.address as customer_address,
-              p.name as package_name, p.description as package_description, p.price as package_price, p.duration_days
+              p.name as package_name, p.description as package_description, p.price as package_price, p.duration_days,
+              t.transport_type, t.from_location, t.to_location, t.price as transport_price
        FROM bookings b
        LEFT JOIN customers c ON b.customer_id = c.id
        LEFT JOIN packages p ON b.package_id = p.id
+       LEFT JOIN transports t ON b.assigned_transport_id = t.id
        WHERE b.id = $1`,
       [id]
     );
@@ -70,6 +74,7 @@ export const create = async (req, res) => {
       status,
       assigned_hotel_id,
       assigned_vehicle_id,
+      assigned_transport_id,
       assigned_staff_id,
       assigned_guide_id,
       internal_notes,
@@ -83,8 +88,8 @@ export const create = async (req, res) => {
     const creatorId = req.user?.id != null ? Number(req.user.id) : null;
     const result = await pool.query(
       `INSERT INTO bookings (customer_id, package_id, travel_start_date, travel_end_date, total_amount, status,
-        assigned_hotel_id, assigned_vehicle_id, assigned_staff_id, assigned_guide_id, internal_notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+        assigned_hotel_id, assigned_vehicle_id, assigned_transport_id, assigned_staff_id, assigned_guide_id, internal_notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
       [
         customer_id,
         package_id,
@@ -94,6 +99,7 @@ export const create = async (req, res) => {
         status || 'inquiry',
         assigned_hotel_id ?? null,
         assigned_vehicle_id ?? null,
+        assigned_transport_id ?? null,
         assigned_staff_id ?? null,
         assigned_guide_id ?? null,
         internal_notes ?? null,
@@ -115,14 +121,14 @@ export const update = async (req, res) => {
     if (!assertStaffOwnsRecord(req, existing.rows[0].created_by)) {
       return res.status(404).json({ message: 'Booking not found.' });
     }
-    const { travel_start_date, travel_end_date, assigned_hotel_id, assigned_vehicle_id, assigned_staff_id, assigned_guide_id, status, total_amount, internal_notes } = req.body;
+    const { travel_start_date, travel_end_date, assigned_hotel_id, assigned_vehicle_id, assigned_transport_id, assigned_staff_id, assigned_guide_id, status, total_amount, internal_notes } = req.body;
     const result = await pool.query(
       `UPDATE bookings SET
         travel_start_date = COALESCE($1, travel_start_date), travel_end_date = COALESCE($2, travel_end_date),
-        assigned_hotel_id = $3, assigned_vehicle_id = $4, assigned_staff_id = $5, assigned_guide_id = $6,
-        status = COALESCE($7, status), total_amount = COALESCE($8, total_amount), internal_notes = $9, updated_at = NOW()
-       WHERE id = $10 RETURNING *`,
-      [travel_start_date, travel_end_date, assigned_hotel_id ?? null, assigned_vehicle_id ?? null, assigned_staff_id ?? null, assigned_guide_id ?? null, status, total_amount != null ? Number(total_amount) : null, internal_notes ?? null, id]
+        assigned_hotel_id = $3, assigned_vehicle_id = $4, assigned_transport_id = $5, assigned_staff_id = $6, assigned_guide_id = $7,
+        status = COALESCE($8, status), total_amount = COALESCE($9, total_amount), internal_notes = $10, updated_at = NOW()
+       WHERE id = $11 RETURNING *`,
+      [travel_start_date, travel_end_date, assigned_hotel_id ?? null, assigned_vehicle_id ?? null, assigned_transport_id ?? null, assigned_staff_id ?? null, assigned_guide_id ?? null, status, total_amount != null ? Number(total_amount) : null, internal_notes ?? null, id]
     );
     if (result.rowCount === 0) return res.status(404).json({ message: 'Booking not found.' });
     res.json(result.rows[0]);

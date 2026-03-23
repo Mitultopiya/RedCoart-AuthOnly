@@ -11,6 +11,7 @@ import {
   FaMapMarkerAlt,
   FaHotel,
   FaTruck,
+  FaPlaneDeparture,
   FaStar,
   FaBuilding,
   FaUniversity,
@@ -35,6 +36,7 @@ const adminNav = [
   // { to: '/admin/packages', label: 'Packages', icon: FaCube },
   // { to: '/admin/package-builder', label: 'Package Builder', icon: FaCog },
   { to: '/admin/itinerary', label: 'Itinerary', icon: FaMapMarkerAlt },
+  { to: '/admin/transport', label: 'Transport', icon: FaPlaneDeparture },
   { to: '/admin/rate-calculator', label: 'Rate Calculator', icon: FaCalculator },
   {
     label: 'Preferred Items',

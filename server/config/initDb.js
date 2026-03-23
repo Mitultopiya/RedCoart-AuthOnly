@@ -106,6 +106,19 @@ const createStatements = [
     CONSTRAINT fk_vehicles_city FOREIGN KEY (city_id) REFERENCES cities(id) ON DELETE SET NULL,
     CONSTRAINT fk_vehicles_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL
   ) ENGINE=InnoDB`,
+  `CREATE TABLE IF NOT EXISTS transports (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    transport_type VARCHAR(20) NOT NULL,
+    from_location VARCHAR(255) NOT NULL,
+    to_location VARCHAR(255) NOT NULL,
+    branch_id INT NULL,
+    base_price DECIMAL(12,2),
+    markup_price DECIMAL(12,2),
+    price DECIMAL(12,2),
+    month_prices JSON,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_transports_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL
+  ) ENGINE=InnoDB`,
   `CREATE TABLE IF NOT EXISTS activities (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -171,6 +184,7 @@ const createStatements = [
     travel_end_date DATE,
     assigned_hotel_id INT NULL,
     assigned_vehicle_id INT NULL,
+    assigned_transport_id INT NULL,
     assigned_staff_id INT NULL,
     assigned_guide_id INT NULL,
     internal_notes TEXT,
@@ -182,6 +196,7 @@ const createStatements = [
     CONSTRAINT fk_bookings_package FOREIGN KEY (package_id) REFERENCES packages(id) ON DELETE SET NULL,
     CONSTRAINT fk_bookings_hotel FOREIGN KEY (assigned_hotel_id) REFERENCES hotels(id) ON DELETE SET NULL,
     CONSTRAINT fk_bookings_vehicle FOREIGN KEY (assigned_vehicle_id) REFERENCES vehicles(id) ON DELETE SET NULL,
+    CONSTRAINT fk_bookings_transport FOREIGN KEY (assigned_transport_id) REFERENCES transports(id) ON DELETE SET NULL,
     CONSTRAINT fk_bookings_staff FOREIGN KEY (assigned_staff_id) REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT fk_bookings_guide FOREIGN KEY (assigned_guide_id) REFERENCES guides(id) ON DELETE SET NULL,
     CONSTRAINT fk_bookings_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL,
@@ -381,6 +396,7 @@ export async function initDb() {
     await client.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS vehicle_type VARCHAR(100)`).catch(() => {});
     await ensureColumn(client, 'customers', 'created_by', 'INT NULL');
     await ensureColumn(client, 'bookings', 'created_by', 'INT NULL');
+    await ensureColumn(client, 'bookings', 'assigned_transport_id', 'INT NULL');
     await ensureColumn(client, 'payments', 'created_by', 'INT NULL');
 
     await client.query(
@@ -406,6 +422,11 @@ export async function initDb() {
       UPDATE bookings bk LEFT JOIN branches b ON bk.branch_id = b.id
       SET bk.branch_id = NULL
       WHERE bk.branch_id IS NOT NULL AND b.id IS NULL
+    `).catch(() => {});
+    await client.query(`
+      UPDATE transports t LEFT JOIN branches b ON t.branch_id = b.id
+      SET t.branch_id = NULL
+      WHERE t.branch_id IS NOT NULL AND b.id IS NULL
     `).catch(() => {});
     await client.query(`
       UPDATE quotations q LEFT JOIN branches b ON q.branch_id = b.id

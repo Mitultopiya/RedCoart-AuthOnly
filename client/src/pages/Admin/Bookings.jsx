@@ -8,6 +8,7 @@ import {
   getPackages,
   getHotels,
   getVehicles,
+  getTransports,
   getStaff,
   addBookingNote,
   addPayment,
@@ -35,10 +36,11 @@ export default function Bookings() {
   const [packages, setPackages] = useState([]);
   const [hotels, setHotels] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [transports, setTransports] = useState([]);
   const [staff, setStaff] = useState([]);
   const [form, setForm] = useState({
     customer_id: '', package_id: '', travel_start_date: '', travel_end_date: '', total_amount: '', status: 'inquiry',
-    assigned_hotel_id: '', assigned_vehicle_id: '', assigned_staff_id: '', internal_notes: '',
+    assigned_hotel_id: '', assigned_vehicle_id: '', assigned_transport_id: '', assigned_staff_id: '', internal_notes: '',
   });
   const [noteText, setNoteText] = useState('');
   const [paymentForm, setPaymentForm] = useState({ amount: '', mode: 'cash', reference: '' });
@@ -52,12 +54,13 @@ export default function Bookings() {
   };
   useEffect(() => { load(); }, [status, page]);
   useEffect(() => {
-    Promise.all([getCustomers({ limit: 500 }), getPackages(), getHotels(), getVehicles(), getStaff()]).then(
-      ([c, p, h, v, s]) => {
+    Promise.all([getCustomers({ limit: 500 }), getPackages(), getHotels(), getVehicles(), getTransports(), getStaff()]).then(
+      ([c, p, h, v, t, s]) => {
         setCustomers(c.data?.data || c.data || []);
         setPackages(p.data || []);
         setHotels(h.data || []);
         setVehicles(v.data || []);
+        setTransports(t.data || []);
         setStaff(s.data || []);
       }
     ).catch(() => {});
@@ -73,6 +76,25 @@ export default function Bookings() {
     return Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
   };
 
+  const getMonthNameFromDate = (dateStr) => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleString('en-US', { month: 'long' });
+  };
+
+  const getTransportDayPrice = (transport, startDate) => {
+    if (!transport) return 0;
+    const month = getMonthNameFromDate(startDate);
+    const monthPrices = transport.month_prices && typeof transport.month_prices === 'object'
+      ? transport.month_prices
+      : null;
+    if (month && monthPrices && monthPrices[month] != null && monthPrices[month] !== '') {
+      return Number(monthPrices[month]) || 0;
+    }
+    return Number(transport.price || 0);
+  };
+
   const recalcTotal = (patch) => {
     setForm((prev) => {
       const next = { ...prev, ...(patch || {}) };
@@ -84,7 +106,9 @@ export default function Bookings() {
       const vehicle = vehicles.find((v) => String(v.id) === String(next.assigned_vehicle_id));
       const hotelRate = hotel ? Number(hotel.price || 0) : 0;
       const vehicleRate = vehicle ? Number(vehicle.price || 0) : 0;
-      const total = days * (hotelRate + vehicleRate);
+      const transport = transports.find((t) => String(t.id) === String(next.assigned_transport_id));
+      const transportRate = getTransportDayPrice(transport, next.travel_start_date);
+      const total = days * (hotelRate + vehicleRate + transportRate);
       return {
         ...next,
         total_amount: total ? String(total) : next.total_amount,
@@ -95,7 +119,7 @@ export default function Bookings() {
   const openAdd = () => {
     setForm({
       customer_id: '', package_id: '', travel_start_date: '', travel_end_date: '', total_amount: '', status: 'inquiry',
-      assigned_hotel_id: '', assigned_vehicle_id: '', assigned_staff_id: '', internal_notes: '',
+      assigned_hotel_id: '', assigned_vehicle_id: '', assigned_transport_id: '', assigned_staff_id: '', internal_notes: '',
     });
     setModal({ open: true, mode: 'add' });
   };
@@ -117,6 +141,7 @@ export default function Bookings() {
       status: form.status,
       assigned_hotel_id: form.assigned_hotel_id ? Number(form.assigned_hotel_id) : null,
       assigned_vehicle_id: form.assigned_vehicle_id ? Number(form.assigned_vehicle_id) : null,
+      assigned_transport_id: form.assigned_transport_id ? Number(form.assigned_transport_id) : null,
       assigned_staff_id: form.assigned_staff_id ? Number(form.assigned_staff_id) : null,
       internal_notes: form.internal_notes || null,
     };
@@ -230,7 +255,7 @@ export default function Bookings() {
               {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Hotel</label>
               <select value={form.assigned_hotel_id} onChange={(e) => recalcTotal({ assigned_hotel_id: e.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -243,6 +268,17 @@ export default function Bookings() {
               <select value={form.assigned_vehicle_id} onChange={(e) => recalcTotal({ assigned_vehicle_id: e.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
                 <option value="">— None —</option>
                 {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Transport</label>
+              <select value={form.assigned_transport_id} onChange={(e) => recalcTotal({ assigned_transport_id: e.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                <option value="">— None —</option>
+                {transports.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.transport_type}: {t.from_location} → {t.to_location} (₹{Number(t.price || 0).toLocaleString()}/day)
+                  </option>
+                ))}
               </select>
             </div>
             <div>
