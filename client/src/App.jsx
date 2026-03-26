@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { getStoredUser } from './utils/auth';
 
 import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import AdminLayout from './components/AdminLayout';
 import StaffLayout from './components/StaffLayout';
 import AdminDashboard from './pages/Admin/Dashboard';
@@ -20,8 +22,10 @@ import AdminSettings from './pages/Admin/Settings';
 import AdminCities from './pages/Admin/Masters/Cities';
 import AdminHotels from './pages/Admin/Masters/Hotels';
 import AdminVehicles from './pages/Admin/Masters/Vehicles';
-import AdminTransports from './pages/Admin/Masters/Transports';
 import AdminActivities from './pages/Admin/Masters/Activities';
+import TravellingTypes from './pages/Admin/Travelling/Types';
+import TravellingLocations from './pages/Admin/Travelling/Locations';
+import TravellingPrices from './pages/Admin/Travelling/Prices';
 import StaffDashboard from './pages/Staff/Dashboard';
 import StaffMyBookings from './pages/Staff/MyBookings';
 import StaffBookingDetails from './pages/Staff/BookingDetails';
@@ -52,6 +56,8 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+      <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+      <Route path="/reset-password" element={<PublicRoute><ResetPassword /></PublicRoute>} />
 
       <Route path="/admin" element={<ProtectedRoute allowRoles={['admin', 'manager']}><AdminLayout /></ProtectedRoute>}>
         <Route index element={<AdminDashboard />} />
@@ -61,7 +67,6 @@ function App() {
         <Route path="package-builder/:id" element={<Navigate to="/admin" replace />} />
         <Route path="bookings" element={<AdminBookings />} />
         <Route path="itinerary" element={<AdminItinerary />} />
-        <Route path="transport" element={<AdminTransports />} />
         <Route path="rate-calculator" element={<AdminRateCalculator />} />
         <Route path="rate-calculator/preview" element={<AdminRateCalculatorPreview />} />
         <Route path="preferred-items" element={<AdminPreferredItems />} />
@@ -73,8 +78,10 @@ function App() {
         <Route path="masters/cities" element={<AdminCities />} />
         <Route path="masters/hotels" element={<AdminHotels />} />
         <Route path="masters/vehicles" element={<AdminVehicles />} />
-        <Route path="masters/transports" element={<AdminTransports />} />
         <Route path="masters/activities" element={<AdminActivities />} />
+        <Route path="travelling/types" element={<TravellingTypes />} />
+        <Route path="travelling/locations" element={<TravellingLocations />} />
+        <Route path="travelling/prices" element={<TravellingPrices />} />
         <Route path="settings" element={<AdminSettings />} />
         <Route path="settings/:section" element={<AdminSettings />} />
       </Route>

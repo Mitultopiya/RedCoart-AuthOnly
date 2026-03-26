@@ -4,6 +4,7 @@ import { FaBars } from 'react-icons/fa';
 
 export default function Header({ onMenuClick }) {
   const user = getStoredUser();
+  const panelLabel = String(user?.role || '').toLowerCase() === 'staff' ? 'Staff Panel' : 'Admin Panel';
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
@@ -20,7 +21,7 @@ export default function Header({ onMenuClick }) {
             </button>
           )}
           <div className="w-2 h-5 sm:h-6 rounded-full bg-primary-500 hidden sm:block flex-shrink-0" />
-          <span className="text-slate-500 text-xs sm:text-sm font-medium truncate">Admin Panel</span>
+          <span className="text-slate-500 text-xs sm:text-sm font-medium truncate">{panelLabel}</span>
         </div>
         <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
           <div className="text-right hidden sm:block min-w-0">

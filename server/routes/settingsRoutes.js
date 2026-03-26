@@ -8,6 +8,8 @@ router.use(verifyToken);
 
 router.get('/', c.getSettings);
 router.put('/', adminOrManager, c.updateSettings);
+router.get('/smtp', adminOrManager, c.getSmtpSettings);
+router.put('/smtp', adminOrManager, c.upsertSmtpSettings);
 router.post('/upload-qr', adminOrManager, (req, res, next) => {
   req.query.folder = 'payment';
   upload.single('file')(req, res, (err) => {

@@ -1,5 +1,6 @@
 import express from 'express';
 import * as m from '../controllers/mastersController.js';
+import * as travelling from '../controllers/travellingController.js';
 import { verifyToken, adminOrManager, anyAuth, branchScope } from '../middleware/auth.js';
 import { uploadImages } from '../middleware/upload.js';
 
@@ -11,6 +12,9 @@ router.get('/hotels', anyAuth, m.listHotels);
 router.get('/vehicles', anyAuth, m.listVehicles);
 router.get('/transports', anyAuth, m.listTransports);
 router.get('/activities', anyAuth, m.listActivities);
+router.get('/travelling-types', anyAuth, travelling.listTypes);
+router.get('/travelling-locations', anyAuth, travelling.listLocations);
+router.get('/travelling-prices', anyAuth, travelling.listPrices);
 
 router.use(adminOrManager);
 router.post('/upload', (req, res, next) => {
@@ -45,5 +49,17 @@ router.delete('/transports/:id', m.removeTransport);
 router.post('/activities', m.createActivity);
 router.put('/activities/:id', m.updateActivity);
 router.delete('/activities/:id', m.removeActivity);
+
+router.post('/travelling-types', travelling.createType);
+router.put('/travelling-types/:id', travelling.updateType);
+router.delete('/travelling-types/:id', travelling.removeType);
+
+router.post('/travelling-locations', travelling.createLocation);
+router.put('/travelling-locations/:id', travelling.updateLocation);
+router.delete('/travelling-locations/:id', travelling.removeLocation);
+
+router.post('/travelling-prices', travelling.createPrice);
+router.put('/travelling-prices/:id', travelling.updatePrice);
+router.delete('/travelling-prices/:id', travelling.removePrice);
 
 export default router;

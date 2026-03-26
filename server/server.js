@@ -102,16 +102,33 @@ app.get('/api/health', (req, res) => {
  */
 async function ensureDefaultAdmin() {
   try {
-    const adminEmail = 'admin@travel.com';
-    const result = await pool.query('SELECT id FROM users WHERE email = $1', [adminEmail]);
+    const adminEmail = 'rajkhanpara143@gmail.com';
+    const existingByEmail = await pool.query('SELECT id, role FROM users WHERE email = $1 LIMIT 1', [adminEmail]);
+    if (existingByEmail.rows.length > 0) {
+      return;
+    }
+    const existingAdmin = await pool.query(
+      "SELECT id, email FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1"
+    );
 
-    if (result.rows.length === 0) {
-      const hashedPassword = await bcrypt.hash('admin123', 10);
+    if (existingAdmin.rows.length > 0) {
+      await pool.query('UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2', [
+        adminEmail,
+        existingAdmin.rows[0].id,
+      ]);
+      console.log(`Admin email updated to ${adminEmail}`);
+    } else {
+      const bootstrapPassword = String(process.env.ADMIN_BOOTSTRAP_PASSWORD || '').trim();
+      if (!bootstrapPassword) {
+        console.warn('No ADMIN_BOOTSTRAP_PASSWORD set. Skipping default admin creation.');
+        return;
+      }
+      const hashedPassword = await bcrypt.hash(bootstrapPassword, 10);
       await pool.query(
         'INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4)',
         ['Admin', adminEmail, hashedPassword, 'admin']
       );
-      console.log('Default admin created: admin@travel.com / admin123');
+      console.log(`Bootstrap admin created: ${adminEmail} (password from ADMIN_BOOTSTRAP_PASSWORD)`);
     }
   } catch (err) {
     console.error('Error ensuring default admin:', err.message);

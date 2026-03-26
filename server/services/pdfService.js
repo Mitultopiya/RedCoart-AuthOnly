@@ -964,6 +964,65 @@ export async function generateInvoiceDocPDF(invoice, customer = {}, items = [], 
     if (desc.toLowerCase() === 'markup') return false;
     return true;
   });
+  const itineraryFromItems = (() => {
+    const hotelRows = (Array.isArray(realItems) ? realItems : []).filter((it) => {
+      const desc = String(it?.description || '').trim().toLowerCase();
+      return desc.startsWith('hotel:');
+    });
+    if (!hotelRows.length) return '';
+    const ordered = [];
+    const nightsByLocation = new Map();
+    for (const row of hotelRows) {
+      const description = String(row.description || '').trim();
+      const locationPart = description.replace(/^hotel:\s*/i, '').split(' - ')[0]?.trim();
+      if (!locationPart) continue;
+      if (!nightsByLocation.has(locationPart)) {
+        nightsByLocation.set(locationPart, 0);
+        ordered.push(locationPart);
+      }
+      // Qty in hotel rows is usually room-nights; when rooms=1, it matches itinerary nights.
+      const qty = Math.max(1, Number(row.quantity || 0));
+      nightsByLocation.set(locationPart, Number(nightsByLocation.get(locationPart) || 0) + qty);
+    }
+    if (!ordered.length) return '';
+    const parts = ordered.map((loc) => `${Number(nightsByLocation.get(loc) || 0)}N ${loc}`);
+    const totalNights = parts.reduce((sum, part) => {
+      const m = String(part).match(/^(\d+)\s*N/i);
+      return sum + Number(m?.[1] || 0);
+    }, 0);
+    return `${parts.join(' / ')}${totalNights > 0 ? ` (${totalNights} Nights)` : ''}`;
+  })();
+  const itineraryFromTerms = (() => {
+    const terms = String(invoice.terms_text || '').trim();
+    if (!terms) return '';
+    const line = terms
+      .split(/\r?\n/)
+      .map((s) => String(s || '').trim())
+      .find((s) => /^-?\s*itinerary\s*:/i.test(s));
+    if (!line) return '';
+    return line.replace(/^-?\s*itinerary\s*:/i, '').trim();
+  })();
+  const itineraryFromDestination = String(invoice.travel_destination || '').trim();
+  const itineraryFromNights = Number(invoice.nights || 0);
+  const itineraryDestinationLabel = itineraryFromDestination
+    ? `${itineraryFromDestination}${itineraryFromNights > 0 ? ` (${itineraryFromNights} Nights)` : ''}`
+    : '';
+  const itineraryName = String(
+    invoice.package_name
+    || itineraryFromItems
+    || itineraryFromTerms
+    || itineraryDestinationLabel
+    || 'Itinerary'
+  ).trim();
+  const inclusiveAmount = Number(invoice.total || 0)
+    || Number(invoice.subtotal || 0)
+    || realItems.reduce((sum, it) => sum + Number(it?.amount || 0), 0);
+  const pdfItems = [{
+    description: `Itinerary: ${itineraryName}`,
+    quantity: 1,
+    rate: inclusiveAmount,
+    amount: inclusiveAmount,
+  }];
 
   const stripPlaceholderAddressParts = (parts) => {
     const bad = new Set(['city', 'state', 'zip', 'zipcode', 'zip code', 'pin', 'pincode', 'pin code']);
@@ -983,11 +1042,11 @@ export async function generateInvoiceDocPDF(invoice, customer = {}, items = [], 
   const companyGstLine = companyGst ? `<div class="muted">GST No.: ${htmlEscape(companyGst)}</div>` : '';
 
   let itemRowsHtml = '';
-  if (!realItems.length) {
+  if (!pdfItems.length) {
     itemRowsHtml =
       '<tr><td colspan="6" style="text-align:center;padding:20px;color:#666;">No line items</td></tr>';
   } else {
-    itemRowsHtml = realItems
+    itemRowsHtml = pdfItems
       .map((it, i) => {
         const qty = Number(it.quantity || 1);
         const rateVal = Number(it.rate || (qty ? Number(it.amount || 0) / qty : it.amount || 0));
@@ -1278,8 +1337,8 @@ export async function generateInvoiceDocPDF(invoice, customer = {}, items = [], 
     pg.drawLine({ start: { x: left, y: yLine }, end: { x: right, y: yLine }, thickness: 1, color: boxBorder });
   };
 
-  for (let i = 0; i < realItems.length; i++) {
-    const it = realItems[i];
+  for (let i = 0; i < pdfItems.length; i++) {
+    const it = pdfItems[i];
     const qty = Number(it.quantity || 1);
     const rateVal = Number(it.rate || (qty ? Number(it.amount || 0) / qty : it.amount || 0));
     const amt = Number(it.amount || 0);

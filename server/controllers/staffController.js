@@ -17,7 +17,7 @@ export const list = async (req, res) => {
     const where = branchId ? 'AND branch_id = $1' : '';
     const params = branchId ? [branchId] : [];
     const result = await pool.query(
-      `SELECT id, name, email, role, is_blocked, branch, branch_id, created_at
+      `SELECT id, name, email, mobile, role, is_blocked, branch, branch_id, created_at
        FROM users
        WHERE role IN ('manager', 'staff') ${where}
        ORDER BY name`,
@@ -32,14 +32,14 @@ export const list = async (req, res) => {
 
 export const create = async (req, res) => {
   try {
-    const { name, email, password, role = 'staff', branch = null, branch_id } = req.body;
+    const { name, email, mobile = null, password, role = 'staff', branch = null, branch_id } = req.body;
     if (!name || !email || !password) return res.status(400).json({ message: 'Name, email, password required.' });
     if (!['manager', 'staff'].includes(role)) return res.status(400).json({ message: 'Role must be manager or staff.' });
     const bid = branch_id != null ? Number(branch_id) : null;
     const hashed = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      'INSERT INTO users (name, email, password, role, branch, branch_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, email, role, is_blocked, branch, branch_id, created_at',
-      [name, email, hashed, role, branch, bid]
+      'INSERT INTO users (name, email, mobile, password, role, branch, branch_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name, email, mobile, role, is_blocked, branch, branch_id, created_at',
+      [name, email, mobile || null, hashed, role, branch, bid]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -52,18 +52,19 @@ export const create = async (req, res) => {
 export const update = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, role, branch, branch_id } = req.body;
+    const { name, email, mobile, role, branch, branch_id } = req.body;
     const result = await pool.query(
       `UPDATE users
        SET name = COALESCE($1, name),
            email = COALESCE($2, email),
-           role = COALESCE($3, role),
-           branch = COALESCE($4, branch),
-           branch_id = COALESCE($5, branch_id),
+           mobile = $3,
+           role = COALESCE($4, role),
+           branch = COALESCE($5, branch),
+           branch_id = COALESCE($6, branch_id),
            updated_at = NOW()
-       WHERE id = $6 AND role IN ('manager', 'staff')
-       RETURNING id, name, email, role, is_blocked, branch, branch_id`,
-      [name, email, role, branch, branch_id != null ? Number(branch_id) : null, id]
+       WHERE id = $7 AND role IN ('manager', 'staff')
+       RETURNING id, name, email, mobile, role, is_blocked, branch, branch_id`,
+      [name, email, mobile || null, role, branch, branch_id != null ? Number(branch_id) : null, id]
     );
     if (result.rowCount === 0) return res.status(404).json({ message: 'Not found.' });
     res.json(result.rows[0]);

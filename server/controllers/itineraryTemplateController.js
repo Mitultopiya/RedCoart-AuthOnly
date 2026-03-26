@@ -136,7 +136,7 @@ export const listCities = async (req, res) => {
 export const create = async (req, res) => {
   const client = await pool.connect();
   try {
-    const { title, branch_id, is_active = true, days = [] } = req.body || {};
+    const { title, notes = '', branch_id, is_active = true, days = [] } = req.body || {};
     const stateName = await resolveStateName(req.body || {});
     if (!title || !stateName) return res.status(400).json({ message: 'Title and state are required.' });
     if (!Array.isArray(days) || days.length === 0) return res.status(400).json({ message: 'At least one city row is required.' });
@@ -175,9 +175,9 @@ export const create = async (req, res) => {
 
     await client.query('BEGIN');
     const inserted = await client.query(
-      `INSERT INTO itinerary_templates (title, state_name, branch_id, total_nights, is_active)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [String(title).trim(), stateName, effectiveBranchId, totalNights, Boolean(is_active)]
+      `INSERT INTO itinerary_templates (title, state_name, notes, branch_id, total_nights, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [String(title).trim(), stateName, String(notes || '').trim(), effectiveBranchId, totalNights, Boolean(is_active)]
     );
     const itinerary = inserted.rows[0];
 
@@ -203,7 +203,7 @@ export const update = async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
-    const { title, branch_id, is_active, days = [] } = req.body || {};
+    const { title, notes = '', branch_id, is_active, days = [] } = req.body || {};
     const stateName = await resolveStateName(req.body || {});
     if (!title || !stateName) return res.status(400).json({ message: 'Title and state are required.' });
     if (!Array.isArray(days) || days.length === 0) return res.status(400).json({ message: 'At least one city row is required.' });
@@ -224,11 +224,11 @@ export const update = async (req, res) => {
     await client.query('BEGIN');
     const updated = await client.query(
       `UPDATE itinerary_templates
-       SET title = $1, state_name = $2, branch_id = $3, total_nights = $4,
-           is_active = COALESCE($5, is_active), updated_at = NOW()
-       WHERE id = $6
+       SET title = $1, state_name = $2, notes = $3, branch_id = $4, total_nights = $5,
+           is_active = COALESCE($6, is_active), updated_at = NOW()
+       WHERE id = $7
        RETURNING *`,
-      [String(title).trim(), stateName, effectiveBranchId, totalNights, is_active, Number(id)]
+      [String(title).trim(), stateName, String(notes || '').trim(), effectiveBranchId, totalNights, is_active, Number(id)]
     );
     if (updated.rowCount === 0) {
       await client.query('ROLLBACK');

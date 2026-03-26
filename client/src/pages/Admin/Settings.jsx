@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getCompanySettings, updateCompanySettings, uploadPaymentQr, getBranches, createBranch, updateBranch, deleteBranch, uploadBaseUrl } from '../../services/api';
+import { getCompanySettings, updateCompanySettings, uploadPaymentQr, getBranches, createBranch, updateBranch, deleteBranch, uploadBaseUrl, getSmtpSettings, updateSmtpSettings } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import Loading from '../../components/Loading';
 import Modal from '../../components/ui/Modal';
@@ -12,6 +12,7 @@ import {
 
 const SETTINGS_SECTIONS = [
   { id: 'company',  label: 'Company Information', icon: RiBuildingLine },
+  { id: 'smtp',     label: 'SMTP Settings',       icon: RiMailLine },
   { id: 'bank',     label: 'Bank Details',        icon: RiBankLine },
   { id: 'payment',  label: 'Payment Settings',    icon: RiQrCodeLine },
   { id: 'branches', label: 'Branch Management',   icon: RiMapPin2Line },
@@ -26,6 +27,23 @@ const FIELDS = {
     { key: 'company_email',   label: 'Email',            icon: RiMailLine,     placeholder: 'info@company.com', type: 'email' },
     { key: 'company_gst',     label: 'GST Number',       icon: RiShieldLine,   placeholder: '22AAAAA0000A1Z5' },
     { key: 'company_website', label: 'Website',          icon: RiBuildingLine, placeholder: 'https://yourcompany.com' },
+  ],
+  smtp: [
+    { key: 'smtp_host', label: 'SMTP Host', placeholder: 'smtp.example.com' },
+    { key: 'smtp_port', label: 'Port', placeholder: '587' },
+    { key: 'smtp_username', label: 'Username (Email)', placeholder: 'noreply@example.com' },
+    { key: 'smtp_password', label: 'Password', type: 'password', placeholder: 'App password / SMTP password' },
+    {
+      key: 'smtp_encryption',
+      label: 'Encryption',
+      type: 'select',
+      options: [
+        { label: 'TLS', value: 'TLS' },
+        { label: 'SSL', value: 'SSL' },
+      ],
+    },
+    { key: 'smtp_from_name', label: 'From Name', placeholder: 'Vision Travel Hub' },
+    { key: 'smtp_from_email', label: 'From Email', placeholder: 'noreply@example.com', type: 'email' },
   ],
   bank: [
     { key: 'bank_name',    label: 'Bank Name',       placeholder: 'State Bank of India' },
@@ -59,6 +77,16 @@ function Field({ field, value, onChange }) {
           rows={2}
           className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-400 focus:border-teal-400 outline-none resize-none"
         />
+      ) : field.type === 'select' ? (
+        <select
+          value={value}
+          onChange={(e) => onChange(field.key, e.target.value)}
+          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-400 focus:border-teal-400 outline-none"
+        >
+          {(field.options || []).map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
       ) : (
         <input
           type={field.type || 'text'}
@@ -87,9 +115,12 @@ const BRANCH_FIELDS = [
 export default function Settings() {
   const { toast } = useToast();
   const [form, setForm] = useState({});
+  const [smtpForm, setSmtpForm] = useState({});
+  const [smtpOriginal, setSmtpOriginal] = useState({});
   const [original, setOriginal] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [smtpSaving, setSmtpSaving] = useState(false);
   const [branches, setBranches] = useState([]);
   const [branchLoading, setBranchLoading] = useState(false);
   const [branchModal, setBranchModal] = useState({ open: false, data: null });
@@ -115,6 +146,15 @@ export default function Settings() {
       .catch(() => toast('Failed to load settings', 'error'))
       .finally(() => setLoading(false));
   };
+  const loadSmtp = () => {
+    getSmtpSettings()
+      .then((r) => {
+        const data = r.data || {};
+        setSmtpForm(data);
+        setSmtpOriginal(data);
+      })
+      .catch(() => toast('Failed to load SMTP settings', 'error'));
+  };
 
   const loadBranches = () => {
     setBranchLoading(true);
@@ -126,6 +166,7 @@ export default function Settings() {
 
   useEffect(() => { loadBranches(); }, []);
   useEffect(() => { load(); }, [selectedBranchId]);
+  useEffect(() => { loadSmtp(); }, []);
 
   // Sync section from URL path (/admin/settings/:section)
   useEffect(() => {
@@ -138,6 +179,7 @@ export default function Settings() {
   }, [sectionParam]);
 
   const handleChange = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+  const handleSmtpChange = (key, val) => setSmtpForm((f) => ({ ...f, [key]: val }));
 
   const handleSave = () => {
     setSaving(true);
@@ -149,9 +191,32 @@ export default function Settings() {
       .catch(() => toast('Failed to save settings', 'error'))
       .finally(() => setSaving(false));
   };
+  const handleSmtpSave = () => {
+    const payload = {
+      smtp_host: String(smtpForm.smtp_host || '').trim(),
+      smtp_port: String(smtpForm.smtp_port || '').trim(),
+      smtp_encryption: String(smtpForm.smtp_encryption || 'TLS'),
+      smtp_username: String(smtpForm.smtp_username || '').trim(),
+      smtp_password: String(smtpForm.smtp_password || '').trim(),
+      smtp_from_name: String(smtpForm.smtp_from_name || '').trim(),
+      smtp_from_email: String(smtpForm.smtp_from_email || '').trim(),
+    };
+    setSmtpSaving(true);
+    updateSmtpSettings(payload)
+      .then((r) => {
+        const data = r.data || {};
+        setSmtpForm(data);
+        setSmtpOriginal(data);
+        toast('SMTP settings saved successfully');
+      })
+      .catch((err) => toast(err.response?.data?.message || 'Failed to save SMTP settings', 'error'))
+      .finally(() => setSmtpSaving(false));
+  };
 
   const handleReset = () => { setForm({ ...original }); };
+  const handleSmtpReset = () => { setSmtpForm({ ...smtpOriginal }); };
   const isDirty = JSON.stringify(form) !== JSON.stringify(original);
+  const isSmtpDirty = JSON.stringify(smtpForm) !== JSON.stringify(smtpOriginal);
 
   const openBranchModal = (branch = null) => {
     setBranchModal({ open: true, data: branch });
@@ -293,6 +358,51 @@ export default function Settings() {
               <Field field={f} value={form[f.key] || ''} onChange={handleChange} />
             </div>
           ))}
+        </div>
+      </div>
+      )}
+
+      {/* SMTP Settings */}
+      {settingsSection === 'smtp' && (
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-cyan-600 to-sky-600">
+          <RiMailLine className="text-white text-lg" />
+          <h2 className="text-sm font-bold text-white">SMTP Settings</h2>
+        </div>
+        <div className="p-6">
+          <p className="text-sm text-slate-600 mb-4">
+            These credentials are used for secure password reset emails.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {FIELDS.smtp.map((f) => (
+              <div key={f.key} className={f.key === 'smtp_password' ? 'sm:col-span-2' : ''}>
+                <Field
+                  field={f}
+                  value={smtpForm[f.key] || (f.key === 'smtp_encryption' ? 'TLS' : '')}
+                  onChange={handleSmtpChange}
+                />
+              </div>
+            ))}
+          </div>
+          {!!smtpForm.smtp_password_masked && !smtpForm.smtp_password && (
+            <p className="text-xs text-slate-500 mt-3">
+              SMTP password is already saved. Enter a new password only if you want to change it.
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-4">
+            {isSmtpDirty && (
+              <button onClick={handleSmtpReset} className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">
+                Reset
+              </button>
+            )}
+            <button
+              onClick={handleSmtpSave}
+              disabled={smtpSaving || !isSmtpDirty}
+              className="px-5 py-2 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg disabled:opacity-50"
+            >
+              {smtpSaving ? 'Saving...' : 'Save SMTP'}
+            </button>
+          </div>
         </div>
       </div>
       )}

@@ -29,6 +29,9 @@ api.interceptors.response.use(
 
 // Auth
 export const login = (email, password) => api.post('/auth/login', { email, password });
+export const forgotPassword = (email) => api.post('/auth/forgot-password', { email });
+export const verifyResetToken = (token) => api.get('/auth/reset-password/verify', { params: { token } });
+export const resetPassword = (token, new_password) => api.post('/auth/reset-password', { token, new_password });
 
 // Users (admin only)
 export const getUsers = () => api.get('/users');
@@ -63,6 +66,18 @@ export const getTransports = (params) => api.get('/masters/transports', { params
 export const createTransport = (data) => api.post('/masters/transports', data);
 export const updateTransport = (id, data) => api.put(`/masters/transports/${id}`, data);
 export const deleteTransport = (id) => api.delete(`/masters/transports/${id}`);
+export const getTravellingTypes = (params) => api.get('/masters/travelling-types', { params });
+export const createTravellingType = (data) => api.post('/masters/travelling-types', data);
+export const updateTravellingType = (id, data) => api.put(`/masters/travelling-types/${id}`, data);
+export const deleteTravellingType = (id) => api.delete(`/masters/travelling-types/${id}`);
+export const getTravellingLocations = (params) => api.get('/masters/travelling-locations', { params });
+export const createTravellingLocation = (data) => api.post('/masters/travelling-locations', data);
+export const updateTravellingLocation = (id, data) => api.put(`/masters/travelling-locations/${id}`, data);
+export const deleteTravellingLocation = (id) => api.delete(`/masters/travelling-locations/${id}`);
+export const getTravellingPrices = (params) => api.get('/masters/travelling-prices', { params });
+export const createTravellingPrice = (data) => api.post('/masters/travelling-prices', data);
+export const updateTravellingPrice = (id, data) => api.put(`/masters/travelling-prices/${id}`, data);
+export const deleteTravellingPrice = (id) => api.delete(`/masters/travelling-prices/${id}`);
 export const getActivities = (params) => api.get('/masters/activities', { params });
 export const createActivity = (data) => api.post('/masters/activities', data);
 export const updateActivity = (id, data) => api.put(`/masters/activities/${id}`, data);
@@ -162,6 +177,8 @@ export const downloadPaymentSlipPdf = (id) => api.get(`/pdf/payment-slip/${id}`,
 // Company Settings
 export const getCompanySettings = (params = {}) => api.get('/settings', { params });
 export const updateCompanySettings = (data) => api.put('/settings', data);
+export const getSmtpSettings = () => api.get('/settings/smtp');
+export const updateSmtpSettings = (data) => api.put('/settings/smtp', data);
 export const uploadPaymentQr = (file, branchId = null) => {
   const form = new FormData();
   form.append('file', file);

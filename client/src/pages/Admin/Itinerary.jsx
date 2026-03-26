@@ -27,6 +27,7 @@ const emptyRow = () => ({ city_name: '', night_count: 1, use_custom: false });
 const emptyForm = () => ({
   title: '',
   state_name: '',
+  notes: '',
   is_active: true,
   days: [emptyRow()],
 });
@@ -97,6 +98,7 @@ export default function Itinerary() {
     setForm({
       title: row.title || '',
       state_name: row.state_name || '',
+      notes: row.notes || '',
       is_active: !!row.is_active,
       days: Array.isArray(row.days) && row.days.length
         ? row.days.map((d) => ({ city_id: d.city_id || null, city_name: d.city_name || '', night_count: Number(d.night_count || 1), use_custom: false }))
@@ -138,6 +140,7 @@ export default function Itinerary() {
     const payload = {
       title: form.title.trim(),
       state_name: form.state_name,
+      notes: String(form.notes || '').trim(),
       branch_id: modal.data?.branch_id ? Number(modal.data.branch_id) : undefined,
       is_active: Boolean(form.is_active),
       days: form.days.map((d) => ({
@@ -179,6 +182,11 @@ export default function Itinerary() {
     { key: 'title', label: 'Title' },
     { key: 'state_name', label: 'State' },
     { key: 'total_nights', label: 'Nights' },
+    {
+      key: 'notes',
+      label: 'Note',
+      render: (r) => <span className="text-xs text-slate-600">{String(r.notes || '').trim() || '-'}</span>,
+    },
     {
       key: 'is_active',
       label: 'Status',
@@ -250,6 +258,16 @@ export default function Itinerary() {
               </select>
             </div>
             <Input label="Total Nights" value={totalNights} readOnly />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Add Note</label>
+            <textarea
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[88px]"
+              placeholder="Add itinerary note..."
+            />
           </div>
 
           <div className="rounded-xl border border-slate-200 p-3 sm:p-4 space-y-3">

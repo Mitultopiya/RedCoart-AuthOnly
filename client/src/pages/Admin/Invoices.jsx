@@ -12,9 +12,11 @@ import {
   getCities,
   getHotels,
   getActivities,
+  getTravellingLocations,
+  getTravellingPrices,
+  getTravellingTypes,
   getItineraryTemplates,
   getStaff,
-  getTransports,
   getVehicles,
   getCompanySettings,
   downloadInvoicePdf,
@@ -22,6 +24,7 @@ import {
 import { getStoredUser } from '../../utils/auth';
 import { getSelectedBranchId, branchParams } from '../../utils/branch';
 import { getUniqueStates } from '../../utils/cities';
+import { getTravellingRowAmount, normalizeTravellingType } from '../../utils/travelling';
 import Loading from '../../components/Loading';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -69,6 +72,14 @@ function StatusBadge({ status }) {
 }
 
 const emptyItem = () => ({ description: '', quantity: '1', rate: '', amount: '' });
+const emptyTravellingRow = () => ({
+  transport_type: 'Train',
+  travelling_type_id: '',
+  from_location_id: '',
+  to_location_id: '',
+  from_date: '',
+  to_date: '',
+});
 
 const getTripDays = (start, end) => {
   if (!start || !end) return 1;
@@ -79,7 +90,7 @@ const getTripDays = (start, end) => {
   return diff > 0 ? diff : 1;
 };
 
-const getPaxUnits = (couples, adults, children) => {
+const getTravellingPersonUnits = ({ couples, adults, children }) => {
   const c = Number(couples || 0);
   const a = Number(adults || 0);
   const ch = Number(children || 0);
@@ -115,7 +126,7 @@ const getAutoEndDate = (startDate, nights) => {
   if (!startDate || !Number(nights)) return '';
   const start = new Date(startDate);
   if (Number.isNaN(start.getTime())) return '';
-  start.setDate(start.getDate() + Number(nights) - 1);
+  start.setDate(start.getDate() + Number(nights));
   return start.toISOString().slice(0, 10);
 };
 
@@ -145,12 +156,14 @@ export default function Invoices() {
   const [cities, setCities] = useState([]);
   const [hotels, setHotels] = useState([]);
   const [vehicles, setVehicles] = useState([]);
-  const [transportsMaster, setTransportsMaster] = useState([]);
   const [activityMasters, setActivityMasters] = useState([]);
+  const [travellingTypesMaster, setTravellingTypesMaster] = useState([]);
+  const [travellingLocationsMaster, setTravellingLocationsMaster] = useState([]);
+  const [travellingPricesMaster, setTravellingPricesMaster] = useState([]);
   const [hotelStarFilter, setHotelStarFilter] = useState('');
   const [hotelInfoRows, setHotelInfoRows] = useState([]);
   const [transfers, setTransfers] = useState([{ vehicle: '', quantity: '1' }]);
-  const [transports, setTransports] = useState([{ transport: '', quantity: '1' }]);
+  const [travellingRows, setTravellingRows] = useState([emptyTravellingRow()]);
   const [activities, setActivities] = useState([{ activity: '' }]);
   const [staff, setStaff] = useState([]);
   const [branchId, setBranchId] = useState(() => getSelectedBranchId());
@@ -211,8 +224,10 @@ export default function Invoices() {
     getCities(params).then((r) => setCities(r.data || [])).catch(() => setCities([]));
     getHotels(params).then((r) => setHotels(r.data || [])).catch(() => setHotels([]));
     getVehicles(params).then((r) => setVehicles(r.data || [])).catch(() => setVehicles([]));
-    getTransports(params).then((r) => setTransportsMaster(r.data || [])).catch(() => setTransportsMaster([]));
     getActivities(params).then((r) => setActivityMasters(r.data || [])).catch(() => setActivityMasters([]));
+    getTravellingTypes(params).then((r) => setTravellingTypesMaster(r.data || [])).catch(() => setTravellingTypesMaster([]));
+    getTravellingLocations(params).then((r) => setTravellingLocationsMaster(r.data || [])).catch(() => setTravellingLocationsMaster([]));
+    getTravellingPrices(params).then((r) => setTravellingPricesMaster(r.data || [])).catch(() => setTravellingPricesMaster([]));
     const role = String(user?.role || '').toLowerCase();
     if (role === 'staff') {
       // Staff users are not allowed to list all staff; keep only current user for sales executive field.
@@ -275,7 +290,7 @@ export default function Invoices() {
     setHotelStarFilter('');
     setHotelInfoRows([]);
     setTransfers([{ vehicle: '', quantity: '1' }]);
-    setTransports([{ transport: '', quantity: '1' }]);
+    setTravellingRows([emptyTravellingRow()]);
     setActivities([{ activity: '' }]);
     setModal({ open: true });
   };
@@ -327,7 +342,7 @@ export default function Invoices() {
         });
         setHotelStarFilter('');
         setTransfers([{ vehicle: '', quantity: '1' }]);
-        setTransports([{ transport: '', quantity: '1' }]);
+        setTravellingRows([emptyTravellingRow()]);
         setActivities([{ activity: '' }]);
         setEditingId(inv.id);
         setModal({ open: true });
@@ -373,22 +388,18 @@ export default function Invoices() {
       : parseItinerary(selected.plan || '');
     const totalNights = stops.reduce((sum, s) => sum + Number(s.nights || 0), 0);
     const plan = buildPlanFromDays(selected.days || []) || selected.plan || selected.title || '';
+    const packageLabel = plan
+      ? `${plan} (${totalNights || selected.total_nights || 0} Nights)`
+      : (selected.title || '');
     const destination = stops.map((s) => s.location).join(', ');
     setForm((f) => {
-      let autoEndDate = f.travel_end_date;
-      if (f.travel_start_date && totalNights > 0) {
-        const start = new Date(f.travel_start_date);
-        if (!Number.isNaN(start.getTime())) {
-          start.setDate(start.getDate() + totalNights - 1);
-          autoEndDate = start.toISOString().slice(0, 10);
-        }
-      }
+      const autoEndDate = getAutoEndDate(f.travel_start_date, totalNights) || f.travel_end_date;
       return {
         ...f,
         itinerary_id: String(selected.id),
         state_name: selected.state_name || f.state_name,
         nights: String(totalNights || f.nights || ''),
-        package_name: selected.title || plan || f.package_name,
+        package_name: packageLabel || f.package_name,
         travel_destination: destination || f.travel_destination,
         travel_end_date: autoEndDate,
       };
@@ -421,8 +432,6 @@ export default function Invoices() {
   const filteredItineraryOptions = form.nights
     ? stateFilteredItineraries.filter((item) => Number(item.totalNights) === Number(form.nights))
     : stateFilteredItineraries;
-  const selectedItineraryOption = itineraryOptions.find((item) => String(item.id) === String(form.itinerary_id));
-  const noItineraryForSelectedNights = Boolean(form.nights) && filteredItineraryOptions.length === 0;
   const selectedItinerary = itineraryTemplates.find((item) => String(item.id) === String(form.itinerary_id));
   const selectedStops = useMemo(() => (
     selectedItinerary
@@ -431,6 +440,14 @@ export default function Invoices() {
         : parseItinerary(selectedItinerary.plan || '').map((s) => ({ location: s.location, nights: Number(s.nights || 0) })))
       : []
   ), [selectedItinerary]);
+  const selectedItineraryOption = itineraryOptions.find((item) => String(item.id) === String(form.itinerary_id));
+  const selectedPackageLabel = useMemo(() => {
+    if (!selectedItinerary) return '';
+    const plan = buildPlanFromDays(selectedItinerary.days || []) || selectedItinerary.plan || selectedItinerary.title || '';
+    const nights = selectedStops.reduce((sum, s) => sum + Number(s.nights || 0), 0) || Number(selectedItinerary.total_nights || 0);
+    return plan ? `${plan} (${nights} Nights)` : '';
+  }, [selectedItinerary, selectedStops]);
+  const noItineraryForSelectedNights = Boolean(form.nights) && filteredItineraryOptions.length === 0;
   const cityMetaById = useMemo(
     () => Object.fromEntries((cities || []).map((c) => [Number(c.id), { name: c.name, state: c.country || '' }])),
     [cities]
@@ -481,11 +498,34 @@ export default function Invoices() {
     () => Object.fromEntries((activityMasters || []).map((a) => [String(a.name || '').toLowerCase(), Number(a.price || 0)])),
     [activityMasters]
   );
-  const transportOptions = useMemo(
-    () => (transportsMaster || [])
-      .filter((t) => t?.transport_type && t?.from_location && t?.to_location)
-      .map((t) => `${t.transport_type}: ${t.from_location} -> ${t.to_location}`),
-    [transportsMaster]
+  const travellingTypesByMode = useMemo(() => {
+    const grouped = { Train: [], Flight: [] };
+    (travellingTypesMaster || []).forEach((row) => {
+      const mode = normalizeTravellingType(row.transport_type);
+      grouped[mode].push(row);
+    });
+    return grouped;
+  }, [travellingTypesMaster]);
+  const travellingLocationsByModeType = useMemo(() => {
+    const grouped = {};
+    (travellingLocationsMaster || []).forEach((row) => {
+      const mode = normalizeTravellingType(row.transport_type);
+      const typeId = Number(row.travelling_type_id || 0);
+      const key = `${mode}|${typeId}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(row);
+    });
+    return grouped;
+  }, [travellingLocationsMaster]);
+  const travellingPriceMap = useMemo(
+    () =>
+      Object.fromEntries(
+        (travellingPricesMaster || []).map((price) => [
+          `${normalizeTravellingType(price.transport_type)}|${Number(price.from_location_id)}|${Number(price.to_location_id)}`,
+          price,
+        ])
+      ),
+    [travellingPricesMaster]
   );
   useEffect(() => {
     if (form.hotel_category && !hotelCategoryOptions.includes(form.hotel_category)) {
@@ -508,27 +548,13 @@ export default function Invoices() {
     const nightsByLocation = Object.fromEntries(selectedStops.map((s) => [String(s.location || '').toLowerCase(), Number(s.nights || 0)]));
     const hotelByName = Object.fromEntries((hotels || []).map((h) => [String(h.name || '').toLowerCase(), h]));
     const vehicleRateByName = Object.fromEntries((vehicles || []).map((v) => [String(v.name || '').toLowerCase(), Number(v.price || 0)]));
-    const travelMonth = form.travel_start_date
-      ? new Date(form.travel_start_date).toLocaleString('en-US', { month: 'long' })
-      : (form.invoice_date ? new Date(form.invoice_date).toLocaleString('en-US', { month: 'long' }) : '');
-    const transportRateByLabel = Object.fromEntries((transportsMaster || [])
-      .filter((t) => t?.transport_type && t?.from_location && t?.to_location)
-      .map((t) => {
-        const label = `${t.transport_type}: ${t.from_location} -> ${t.to_location}`;
-        const monthPrice = t.month_prices && typeof t.month_prices === 'object'
-          ? t.month_prices[travelMonth]
-          : null;
-        const rate = monthPrice != null && monthPrice !== ''
-          ? Number(monthPrice || 0)
-          : Number(t.price || 0);
-        return [String(label).toLowerCase(), rate];
-      }));
     const activityRateByName = Object.fromEntries((activityMasters || []).map((a) => [String(a.name || '').toLowerCase(), Number(a.price || 0)]));
 
     const couples = Number(form.couples || 0);
     const adults = Number(form.adults || 0);
     const children = Number(form.children || 0);
     const paxMultiplier = couples + (children * 0.25);
+    const travellingPersonUnits = Math.max(0, getTravellingPersonUnits(form));
     const days = Number(form.nights || 0) || getTripDays(form.travel_start_date, form.travel_end_date);
 
     const hotelItems = (hotelInfoRows || [])
@@ -561,20 +587,27 @@ export default function Invoices() {
         };
       });
 
-    const personUnits = Math.max(1, getPaxUnits(couples, adults, children));
-    const transportItems = (transports || [])
-      .filter((t) => t.transport)
-      .map((t) => {
-        const qty = Number(t.quantity || 1);
-        const rate = Number(transportRateByLabel[String(t.transport || '').toLowerCase()] || 0);
-        const amount = qty * rate * personUnits;
+    const travellingItems = (travellingRows || [])
+      .filter((row) => row.from_location_id && row.to_location_id && row.from_date)
+      .map((row) => {
+        const key = `${normalizeTravellingType(row.transport_type)}|${Number(row.from_location_id)}|${Number(row.to_location_id)}`;
+        const priceRow = travellingPriceMap[key];
+        const amountPerPerson = getTravellingRowAmount(priceRow, row.from_date, row.to_date);
+        const amount = amountPerPerson * travellingPersonUnits;
+        const typeName = (travellingTypesMaster || []).find((t) => Number(t.id) === Number(row.travelling_type_id))?.name || '-';
+        const fromLoc = (travellingLocationsMaster || []).find((l) => Number(l.id) === Number(row.from_location_id));
+        const toLoc = (travellingLocationsMaster || []).find((l) => Number(l.id) === Number(row.to_location_id));
+        const dateLabel = row.to_date && row.to_date !== row.from_date
+          ? `${row.from_date} to ${row.to_date}`
+          : row.from_date;
         return {
-          description: `Transport: ${t.transport}`,
-          quantity: String(qty * personUnits),
-          rate: String(rate),
+          description: `Travelling: ${row.transport_type} / ${typeName} | ${fromLoc?.location_name || '-'} -> ${toLoc?.location_name || '-'} | Date: ${dateLabel}`,
+          quantity: '1',
+          rate: String(amount),
           amount: String(amount),
         };
       });
+
 
     const activityItems = (activities || [])
       .filter((a) => a.activity)
@@ -593,7 +626,7 @@ export default function Invoices() {
       ? [{ description: 'Markup', quantity: '1', rate: String(markupValue), amount: String(markupValue) }]
       : [];
 
-    const autoItems = [...hotelItems, ...transferItems, ...transportItems, ...activityItems, ...markupItem];
+    const autoItems = [...hotelItems, ...transferItems, ...travellingItems, ...activityItems, ...markupItem];
     setForm((prev) => ({ ...prev, items: autoItems.length ? autoItems : [emptyItem()] }));
   }, [
     selectedStops,
@@ -602,16 +635,18 @@ export default function Invoices() {
     activityMasters,
     hotelInfoRows,
     transfers,
-    transports,
+    travellingRows,
     activities,
     form.couples,
     form.adults,
     form.children,
     form.nights,
     form.travel_start_date,
-    form.invoice_date,
     form.travel_end_date,
     form.markup,
+    travellingPriceMap,
+    travellingTypesMaster,
+    travellingLocationsMaster,
   ]);
   const tripReferenceText = useMemo(() => {
     const itineraryLine = selectedItineraryOption?.label || form.package_name || '-';
@@ -629,7 +664,15 @@ export default function Invoices() {
       `- Passengers: Couples ${form.couples || '0'}, Adults ${form.adults || '0'}, Children ${form.children || '0'}`,
       `- Hotels: ${hotelInfoRows.map((r) => `${r.location}: ${r.hotel || '-'}, Meal ${r.meal || '-'}`).join(' | ') || '-'}`,
       `- Transfers: ${transfers.map((t) => `${t.vehicle || '-'} x ${t.quantity || '1'}`).join(' | ') || '-'}`,
-      `- Transport: ${transports.map((t) => `${t.transport || '-'} x ${t.quantity || '1'}`).join(' | ') || '-'}`,
+      `- Travelling: ${travellingRows.map((r) => {
+        const mode = normalizeTravellingType(r.transport_type);
+        const typeName = (travellingTypesMaster || []).find((t) => Number(t.id) === Number(r.travelling_type_id))?.name || '-';
+        const options = travellingLocationsByModeType[`${mode}|${Number(r.travelling_type_id || 0)}`] || [];
+        const fromLoc = options.find((l) => Number(l.id) === Number(r.from_location_id))?.location_name || '-';
+        const toLoc = options.find((l) => Number(l.id) === Number(r.to_location_id))?.location_name || '-';
+        const dateLabel = r.to_date && r.to_date !== r.from_date ? `${r.from_date || '-'} to ${r.to_date}` : (r.from_date || '-');
+        return `${mode} / ${typeName}: ${fromLoc} -> ${toLoc} (${dateLabel})`;
+      }).join(' | ') || '-'}`,
       `- Activities: ${activities.map((a) => a.activity || '-').join(' | ') || '-'}`,
       `- Markup: ${form.markup || '0'}`,
       `- Company: ${form.company_name || '-'} (${form.company_contact || '-'})`,
@@ -651,7 +694,9 @@ export default function Invoices() {
     form.company_contact,
     hotelInfoRows,
     transfers,
-    transports,
+    travellingRows,
+    travellingTypesMaster,
+    travellingLocationsByModeType,
     activities,
   ]);
   useEffect(() => {
@@ -700,6 +745,13 @@ export default function Invoices() {
         amount: Number(i.amount) || 0,
       }));
     const combinedTerms = stripTripReference(form.terms_text || '');
+    const derivedPackageName = (
+      form.package_name
+      || selectedPackageLabel
+      || (form.travel_destination
+        ? `${form.travel_destination}${form.nights ? ` (${form.nights} Nights)` : ''}`
+        : '')
+    ).trim();
     const payload = {
       invoice_number: editingId ? undefined : (form.invoice_number || nextNumber),
       booking_id: form.booking_id || null,
@@ -724,7 +776,7 @@ export default function Invoices() {
       travel_end_date: form.travel_end_date || null,
       adults: Number(form.adults) || 0,
       children: Number(form.children) || 0,
-      package_name: form.package_name || null,
+      package_name: derivedPackageName || null,
       hotel_category: form.hotel_category || null,
       vehicle_type: form.vehicle_type || null,
       terms_text: combinedTerms || null,
@@ -1019,32 +1071,6 @@ export default function Invoices() {
           </Card>
 
           <Card>
-            <h3 className="text-sm font-semibold text-slate-700 mb-3">Transport Details</h3>
-            <div className="space-y-2">
-              {transports.map((row, idx) => (
-                <div key={`tr-${idx}`} className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <select
-                    value={row.transport}
-                    onChange={(e) => setTransports((prev) => prev.map((r, i) => (i === idx ? { ...r, transport: e.target.value } : r)))}
-                    className="h-10 rounded-lg border border-slate-300 px-3 text-sm"
-                  >
-                    <option value="">Select transport</option>
-                    {transportOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  <input
-                    type="number"
-                    min="1"
-                    value={row.quantity}
-                    onChange={(e) => setTransports((prev) => prev.map((r, i) => (i === idx ? { ...r, quantity: e.target.value } : r)))}
-                    className="h-10 rounded-lg border border-slate-300 px-3 text-sm"
-                  />
-                  <Button type="button" variant="secondary" onClick={() => setTransports((prev) => [...prev, { transport: '', quantity: '1' }])}>Add</Button>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          <Card>
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Hotel Info</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
               <div>
@@ -1124,6 +1150,71 @@ export default function Invoices() {
                   <Button type="button" variant="secondary" onClick={() => setTransfers((prev) => [...prev, { vehicle: '', quantity: '1' }])}>Add</Button>
                 </div>
               ))}
+            </div>
+          </Card>
+
+          <Card>
+            <h3 className="text-sm font-semibold text-slate-700 mb-3">Travelling</h3>
+            <div className="space-y-2">
+              {travellingRows.map((row, idx) => {
+                const mode = normalizeTravellingType(row.transport_type);
+                const typeOptions = travellingTypesByMode[mode] || [];
+                const locationOptions = travellingLocationsByModeType[`${mode}|${Number(row.travelling_type_id || 0)}`] || [];
+                const priceKey = `${mode}|${Number(row.from_location_id)}|${Number(row.to_location_id)}`;
+                const units = Math.max(0, getTravellingPersonUnits(form));
+                const amount = getTravellingRowAmount(travellingPriceMap[priceKey], row.from_date, row.to_date) * units;
+                return (
+                  <div key={`tv-${idx}`} className="grid grid-cols-1 md:grid-cols-8 gap-2">
+                    <select
+                      value={row.transport_type}
+                      onChange={(e) => setTravellingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, transport_type: e.target.value, travelling_type_id: '', from_location_id: '', to_location_id: '' } : r)))}
+                      className="h-10 rounded-lg border border-slate-300 px-3 text-sm"
+                    >
+                      <option value="Train">Train</option>
+                      <option value="Flight">Flight</option>
+                    </select>
+                    <select
+                      value={row.travelling_type_id}
+                      onChange={(e) => setTravellingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, travelling_type_id: e.target.value, from_location_id: '', to_location_id: '' } : r)))}
+                      className="h-10 rounded-lg border border-slate-300 px-3 text-sm"
+                    >
+                      <option value="">Type</option>
+                      {typeOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                    <select
+                      value={row.from_location_id}
+                      onChange={(e) => setTravellingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, from_location_id: e.target.value } : r)))}
+                      className="h-10 rounded-lg border border-slate-300 px-3 text-sm"
+                    >
+                      <option value="">From</option>
+                      {locationOptions.map((l) => <option key={l.id} value={l.id}>{l.location_name}</option>)}
+                    </select>
+                    <select
+                      value={row.to_location_id}
+                      onChange={(e) => setTravellingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, to_location_id: e.target.value } : r)))}
+                      className="h-10 rounded-lg border border-slate-300 px-3 text-sm"
+                    >
+                      <option value="">To</option>
+                      {locationOptions.map((l) => <option key={l.id} value={l.id}>{l.location_name}</option>)}
+                    </select>
+                    <input
+                      type="date"
+                      value={row.from_date}
+                      onChange={(e) => setTravellingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, from_date: e.target.value } : r)))}
+                      className="h-10 rounded-lg border border-slate-300 px-3 text-sm"
+                    />
+                    <input
+                      readOnly
+                      value={amount ? `₹${Number(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                      className="h-10 rounded-lg border border-slate-200 bg-slate-100 px-3 text-sm text-slate-700"
+                    />
+                    <div className="flex gap-2">
+                      <Button type="button" variant="secondary" onClick={() => setTravellingRows((prev) => [...prev, emptyTravellingRow()])}>Add</Button>
+                      <Button type="button" variant="danger" onClick={() => setTravellingRows((prev) => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev)} disabled={travellingRows.length === 1}>Remove</Button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </Card>
 

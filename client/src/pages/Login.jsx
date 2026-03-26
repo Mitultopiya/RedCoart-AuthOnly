@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { login } from '../services/api';
 import { setStoredAuth } from '../utils/auth';
 
@@ -101,6 +101,11 @@ export default function Login() {
                 placeholder="••••••••"
                 required
               />
+              <div className="mt-2 text-right">
+                <Link to="/forgot-password" className="text-xs font-medium text-primary-600 hover:text-primary-700">
+                  Forgot Password?
+                </Link>
+              </div>
             </div>
             <button
               type="submit"

@@ -14,9 +14,9 @@ Full-stack ERP-style travel agency application with CRM, itinerary templates, qu
 
 ## Default Admin
 
-- **Email:** admin@travel.com  
-- **Password:** admin123  
-- Created automatically on first API start if the `users` table is empty (`server/server.js`).
+- **Email:** `rajkhanpara143@gmail.com`
+- No hardcoded default password is used.
+- If no admin exists, bootstrap admin is created only when `ADMIN_BOOTSTRAP_PASSWORD` is set in `server/.env`.
 
 ---
 
@@ -109,12 +109,13 @@ Open the URL Vite prints (often `http://localhost:5173`).
 ### 4. Master Data (Preferred Items)
 - **Cities**, **Hotels**, **Vehicles**, **Activities** — branch-scoped where applicable
 
-### 5. Transport Module
-- Standalone **Transport** page in admin sidebar (`/admin/transport`)
-- Fields: **Transport Type** (Flight/Train), **From Location**, **To Location**, **Base Price**, **Markup Price**, **Final Price**
-- Final price is auto-computed: `final = base + markup`
-- **Month-wise pricing** for all 12 months (stored in DB `transports.month_prices`)
-- Used in booking/quotation/invoice calculations as configured
+### 5. Travelling Module
+- Admin sidebar module: **Travelling** with sub-pages:
+  - `Types`
+  - `Locations`
+  - `Prices`
+- Supports transport mode/type-based routes and date-wise base pricing with markup.
+- Used in Rate Calculator and Invoice pricing flows.
 ### 6. Booking Management
 - Customer, package, dates; hotel, vehicle, staff assignment; status workflow (inquiry → … → completed / cancelled)
 - Supports `assigned_transport_id` and transport pricing in totals
@@ -126,33 +127,42 @@ Open the URL Vite prints (often `http://localhost:5173`).
 
 ### 8. Invoices
 - Full invoice fields (GST, travel meta, line items), payments, PDF
-- New invoice form includes separate **Transport Details** section
-- Transport cost uses one-time person logic where applicable
+- Includes **Travelling** section with date-aware route pricing and person-unit logic.
 
 ### 9. Payment Slips
 - Customer-wise payment list, receipt, PDF; **`created_by`** on payments where used
 
 ### 10. Company & Branch Settings
 - Company info, bank, UPI/QR, per-branch overrides via **branch_settings**
+- Dedicated **SMTP Settings** section for dynamic email configuration (host, port, SSL/TLS, user, password, from email/name).
 
-### 11. Staff Management
+### 11. Authentication & Password Reset
+- Login with JWT and bcrypt password hashing.
+- Admin forgot-password flow:
+  - secure token generation
+  - token expiry (15 minutes)
+  - reset link email via dynamic SMTP settings from DB
+- Staff forgot-password behavior: **"Please contact Admin to reset your password."**
+
+### 12. Staff Management
 - Staff users with branch assignment; reset password, block, delete (UI may hide delete for some roles)
 
-### 12. Reports & Analytics
+### 13. Reports & Analytics
 - Branch-aware data where the API supports it
 - **Overview:** KPIs, charts (invoice status, collections, etc.)
 - **Revenue / Pending Payments:** tables and charts
 - **Staff:** booking-related performance (bookings attributed by assignee, creator, or invoice linkage)
 - **Branches:** branch summaries where implemented
 
-### 13. Itinerary Templates
+### 14. Itinerary Templates
 - Template library with day rows (states/cities/nights)
+- Includes itinerary notes, shown in calculator preview/PDF.
 
-### 14. Rate Calculator
-- Separate sections for Trip, Passenger, Transport, Hotel, Transfer, Activities, and Other
-- Transport logic: one-time charge per person units (`couple=2`, `adult=1`, `child=0.5`)
+### 15. Rate Calculator
+- Separate sections for Trip, Passenger, Hotel, Transfer, Travelling, Activities, and Other.
+- Travelling logic supports person units (`couple=2`, `adult=1`, `child=0.5`) and cleaner preview/PDF formatting.
 
-### 15. PDFs
+### 16. PDFs
 - Quotation, invoice, payment slip, itinerary — driven by `server/services/pdfService.js` and company/branch settings
 
 ---
@@ -172,10 +182,10 @@ JWT **roles are matched case-insensitively** in middleware.
 
 | Area | Endpoints |
 |------|-----------|
-| Auth | `POST /api/auth/login` |
+| Auth | `POST /api/auth/login`, `POST /api/auth/forgot-password`, `GET /api/auth/reset-password/verify`, `POST /api/auth/reset-password` |
 | Users | `GET/POST/DELETE /api/users`, `PATCH /api/users/:id/block` |
 | Customers | `GET/POST/PUT/DELETE /api/customers`, family sub-routes |
-| Masters | `GET/POST/PUT/DELETE /api/masters/cities|hotels|vehicles|transports|activities` |
+| Masters | `GET/POST/PUT/DELETE /api/masters/cities|hotels|vehicles|activities|travelling-types|travelling-locations|travelling-prices` |
 | Packages | `GET/POST/PUT/DELETE /api/packages`, uploads, package days |
 | Bookings | `GET/POST/PUT /api/bookings`, `POST /api/bookings/:id/notes` |
 | Quotations | `GET/POST/PUT/DELETE /api/quotations`, convert, etc. |
@@ -183,7 +193,7 @@ JWT **roles are matched case-insensitively** in middleware.
 | Payments | Booking/invoice payment routes as implemented |
 | Staff | `GET/POST/PUT/DELETE /api/staff`, block, reset-password, performance |
 | Reports | `GET /api/reports/dashboard`, `revenue`, `pending-payments`, `staff-performance` |
-| Settings | `GET/PUT /api/settings`, branch settings |
+| Settings | `GET/PUT /api/settings`, `GET/PUT /api/settings/smtp`, `POST /api/settings/upload-qr` |
 | PDF | `GET /api/pdf/...` (itinerary, invoice, quotation, payment-slip, etc.) |
 
 Use header: `Authorization: Bearer <token>`. Base URL: `http://localhost:<PORT>/api`.
@@ -199,7 +209,9 @@ Travel-Agency/
 │   ├── context/          # ToastContext
 │   ├── pages/
 │   │   ├── Login.jsx
-│   │   ├── Admin/        # Dashboard, Customers, Transport, Invoices, PaymentSlips, …
+│   │   ├── ForgotPassword.jsx
+│   │   ├── ResetPassword.jsx
+│   │   ├── Admin/        # Dashboard, Customers, Travelling, Invoices, PaymentSlips, …
 │   │   └── Staff/        # Staff dashboard, bookings
 │   ├── services/api.js
 │   └── utils/            # auth, branch, …

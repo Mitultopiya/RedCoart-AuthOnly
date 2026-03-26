@@ -7,7 +7,7 @@
 --
 -- After import, start the API once: `cd server && npm start`
 --   • initDb() will add any newer columns (ensureColumn) and seed default branch + company_settings.
---   • Default admin is created in server.js if no users exist: admin@travel.com / admin123
+--   • Default admin bootstrap uses ADMIN_BOOTSTRAP_PASSWORD (no hardcoded default password).
 
 CREATE DATABASE IF NOT EXISTS `travel_hub`
   CHARACTER SET utf8mb4
@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   email VARCHAR(255) NOT NULL UNIQUE,
+  mobile VARCHAR(50),
   password VARCHAR(255) NOT NULL,
   role VARCHAR(50) NOT NULL DEFAULT 'staff',
   is_blocked TINYINT(1) NOT NULL DEFAULT 0,
@@ -130,6 +131,43 @@ CREATE TABLE IF NOT EXISTS transports (
   month_prices JSON,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_transports_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS travelling_types (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  transport_type VARCHAR(20) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  branch_id INT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_travelling_types_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS travelling_locations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  transport_type VARCHAR(20) NOT NULL,
+  travelling_type_id INT NULL,
+  state_name VARCHAR(100) NOT NULL,
+  location_name VARCHAR(255) NOT NULL,
+  branch_id INT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_travelling_locations_type FOREIGN KEY (travelling_type_id) REFERENCES travelling_types(id) ON DELETE SET NULL,
+  CONSTRAINT fk_travelling_locations_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS travelling_prices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  transport_type VARCHAR(20) NOT NULL,
+  from_location_id INT NOT NULL,
+  to_location_id INT NOT NULL,
+  branch_id INT NULL,
+  date_ranges JSON,
+  base_price DECIMAL(12,2) DEFAULT 0,
+  markup_price DECIMAL(12,2) DEFAULT 0,
+  final_price DECIMAL(12,2) DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_travelling_prices_from FOREIGN KEY (from_location_id) REFERENCES travelling_locations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_travelling_prices_to FOREIGN KEY (to_location_id) REFERENCES travelling_locations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_travelling_prices_branch FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS activities (
@@ -355,6 +393,18 @@ CREATE TABLE IF NOT EXISTS staff_performance (
   CONSTRAINT fk_staff_performance_booking FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  token_hash VARCHAR(64) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_password_reset_tokens_user (user_id),
+  INDEX idx_password_reset_tokens_hash (token_hash),
+  CONSTRAINT fk_password_reset_tokens_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS company_settings (
   `key` VARCHAR(100) PRIMARY KEY,
   value TEXT,
@@ -386,6 +436,7 @@ CREATE TABLE IF NOT EXISTS itinerary_templates (
   title VARCHAR(255) NOT NULL,
   state_id INT NULL,
   state_name VARCHAR(255),
+  notes TEXT,
   branch_id INT NULL,
   total_nights INT NOT NULL DEFAULT 0,
   is_active TINYINT(1) NOT NULL DEFAULT 1,

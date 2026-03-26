@@ -28,154 +28,273 @@ export default function RateCalculatorPreview() {
     if (!previewText) return;
     const escapeHtml = (value) => String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const lines = previewText.split('\n');
+    const parts = [];
     let inList = false;
-    const rendered = lines.map((raw) => {
+    let inCard = false;
+
+    const closeList = () => {
+      if (inList) {
+        parts.push('</ul>');
+        inList = false;
+      }
+    };
+    const closeCard = () => {
+      closeList();
+      if (inCard) {
+        parts.push('</section>');
+        inCard = false;
+      }
+    };
+    const cardClassFor = (title) => {
+      const t = String(title || '').toLowerCase();
+      if (t.includes('price summary')) return 'section-card summary-card';
+      if (t.includes('trip details')) return 'section-card trip-card';
+      if (t.includes('passenger details')) return 'section-card passenger-card';
+      return 'section-card';
+    };
+    const openCard = (title) => {
+      closeCard();
+      parts.push(`<section class="${cardClassFor(title)}"><h2 class="section-title">${title}</h2>`);
+      inCard = true;
+    };
+
+    for (let i = 0; i < lines.length; i += 1) {
+      const raw = lines[i];
       const line = escapeHtml(raw);
-      if (!line.trim()) {
-        if (inList) {
-          inList = false;
-          return '</ul><div class="spacer"></div>';
-        }
-        return '<div class="spacer"></div>';
+      const trimmed = line.trim();
+      if (!trimmed) {
+        closeList();
+        continue;
       }
-      if (/^=+$/.test(line.trim())) return '';
-      if (line.includes('PRICE SUMMARY:')) {
-        if (inList) inList = false;
-        return '<h2 class="section-title">Price Summary</h2><div class="summary-box">';
+      if (/^=+$/.test(trimmed)) continue;
+
+      if (trimmed.includes('PRICE SUMMARY:')) {
+        openCard('Price Summary');
+        continue;
       }
-      if (/^[^\-].*:$/.test(line.trim())) {
-        if (inList) {
-          inList = false;
-          return `</ul><h2 class="section-title">${line.replace(/:$/, '')}</h2>`;
-        }
-        return `<h2 class="section-title">${line.replace(/:$/, '')}</h2>`;
+
+      if (/^[^\-].*:$/.test(trimmed)) {
+        openCard(trimmed.replace(/:$/, ''));
+        continue;
       }
-      if (line.trim().startsWith('- ')) {
-        const content = line.trim().slice(2);
+
+      if (trimmed.startsWith('- ')) {
+        const content = trimmed.slice(2);
         const isGrandTotal = content.toUpperCase().includes('GRAND TOTAL');
         if (isGrandTotal) {
-          if (inList) {
-            inList = false;
-            return `</ul><div class="grand-total-wrap"><div class="grand-total-line">${content}</div></div>`;
+          closeCard();
+          parts.push(`<div class="grand-total-wrap"><div class="grand-total-line">${content}</div></div>`);
+          continue;
+        }
+        if (/^note\s*:/i.test(content)) {
+          if (!inCard) openCard('Trip Details');
+          closeList();
+          const noteParts = [content.replace(/^note\s*:/i, '').trim()];
+          while (i + 1 < lines.length) {
+            const nextRaw = lines[i + 1];
+            const nextTrimmed = String(nextRaw || '').trim();
+            if (!nextTrimmed) break;
+            if (nextTrimmed.startsWith('- ')) break;
+            if (/^[^\-].*:$/.test(nextTrimmed)) break;
+            if (/^=+$/.test(nextTrimmed)) break;
+            noteParts.push(escapeHtml(nextRaw));
+            i += 1;
           }
-          return `<div class="grand-total-wrap"><div class="grand-total-line">${content}</div></div>`;
+          const noteText = noteParts.join('\n').trim();
+          parts.push(
+            `<div class="note-box">` +
+              `<div class="note-label">Itinerary Note</div>` +
+              `<div class="note-text">${noteText || '-'}</div>` +
+            `</div>`
+          );
+          continue;
         }
+        if (!inCard) openCard('Details');
         if (!inList) {
+          parts.push('<ul class="list">');
           inList = true;
-          return `<ul class="list"><li>${content}</li>`;
         }
-        return `<li>${content}</li>`;
+        parts.push(`<li>${content}</li>`);
+        continue;
       }
-      if (inList) {
-        inList = false;
-        return `</ul><p class="line">${line}</p>`;
-      }
+
+      if (!inCard) openCard('Details');
+      closeList();
       const isMoneyLine = line.includes('Rs.');
-      return `<p class="line${isMoneyLine ? ' money-line' : ''}">${line}</p>`;
-    }).join('');
-    let renderedHtml = inList ? `${rendered}</ul>` : rendered;
-    renderedHtml = renderedHtml.replace('<div class="summary-box"></ul>', '<div class="summary-box">');
-    if (renderedHtml.includes('<div class="summary-box">') && !renderedHtml.includes('</div>')) {
-      renderedHtml += '</div>';
-    } else {
-      renderedHtml = renderedHtml.replace(/(<div class="summary-box">[\s\S]*?)$/, '$1</div>');
+      parts.push(`<p class="line${isMoneyLine ? ' money-line' : ''}">${line}</p>`);
     }
+
+    closeCard();
+    const renderedHtml = parts.join('');
 
     const html = `
       <html>
         <head>
           <title>Package Info</title>
           <style>
-            @page { size: A4; margin: 14mm; }
+            @page { size: A4; margin: 10mm; }
+            * { box-sizing: border-box; }
             body {
-              font-family: "Segoe UI", Arial, sans-serif;
-              line-height: 1.5;
-              color: #0f172a;
+              font-family: "Segoe UI", "Trebuchet MS", Arial, sans-serif;
               margin: 0;
-              background: #ffffff;
-              display: flex;
-              justify-content: center;
+              color: #1f2937;
+              background: radial-gradient(circle at top, #eef9f7 0%, #f8fafc 55%, #ffffff 100%);
             }
             .sheet {
-              border: 1px solid #dbe2ea;
-              border-radius: 10px;
               width: 100%;
-              max-width: 780px;
+              max-width: 820px;
+              margin: 0 auto;
+              border: 1px solid #c9ddd8;
+              border-radius: 16px;
+              overflow: hidden;
+              background: #fff;
+              box-shadow: 0 12px 35px rgba(15, 118, 110, 0.12);
             }
             .header {
-              display: flex;
-              align-items: flex-end;
-              justify-content: space-between;
+              padding: 18px 20px;
+              color: #ffffff;
+              background:
+                linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0)),
+                linear-gradient(90deg, #0f766e, #0ea5a4, #0284c7);
               border-bottom: 2px solid #0f766e;
-              padding: 14px 16px 12px;
-              background: #f8fafc;
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-end;
+              gap: 12px;
             }
             .title {
-              font-size: 22px;
-              font-weight: 700;
               margin: 0;
-              color: #0f172a;
+              font-size: 30px;
+              letter-spacing: 0.03em;
+              line-height: 1.1;
+              font-weight: 800;
+              text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
             }
             .subtitle {
-              font-size: 12px;
-              color: #334155;
-              margin-top: 4px;
+              margin-top: 6px;
+              font-size: 13px;
+              opacity: 0.95;
+              letter-spacing: 0.04em;
             }
             .meta {
               font-size: 11px;
-              color: #64748b;
               text-align: right;
+              opacity: 0.95;
+              padding: 6px 10px;
+              border: 1px solid rgba(255,255,255,0.35);
+              border-radius: 8px;
+              background: rgba(255,255,255,0.12);
             }
-            .content { padding: 14px 16px; background: #fff; }
+            .content {
+              padding: 16px 18px 20px;
+              background:
+                linear-gradient(180deg, rgba(15, 118, 110, 0.04), rgba(15,118,110,0)),
+                #ffffff;
+            }
+            .section-card {
+              margin: 10px 0;
+              padding: 10px 12px 8px;
+              border: 1px solid #d6e6e2;
+              border-radius: 12px;
+              background: linear-gradient(180deg, #ffffff, #f9fcfc);
+              box-shadow: 0 2px 10px rgba(15, 118, 110, 0.06);
+            }
+            .trip-card, .passenger-card {
+              background: linear-gradient(180deg, #ffffff, #f2fbfa);
+            }
+            .summary-card {
+              border-color: #bfe4dc;
+              border-left: 4px solid #0f766e;
+              background: linear-gradient(180deg, #f0fdfa, #f8fafc);
+            }
             .section-title {
+              margin: 0 0 8px;
               font-size: 12px;
               text-transform: uppercase;
-              letter-spacing: 0.06em;
-              color: #0f766e;
-              margin: 16px 0 8px;
-              border-left: 3px solid #0f766e;
-              padding: 2px 0 2px 8px;
+              letter-spacing: 0.08em;
+              font-weight: 800;
+              color: #0b5e58;
+              display: inline-block;
+              padding: 5px 12px;
+              border-radius: 999px;
+              background: linear-gradient(90deg, #d8f3ee, #ecfeff);
+              border: 1px solid #b9e7df;
+            }
+            .line {
+              margin: 0 0 7px;
+              font-size: 12.5px;
+              line-height: 1.5;
+              padding-left: 2px;
+            }
+            .money-line {
               font-weight: 700;
+              color: #0b5e58;
             }
-            .line { margin: 0 0 6px; font-size: 12px; color: #1e293b; }
-            .money-line { font-weight: 600; }
-            .list { margin: 0 0 10px 18px; padding: 0; }
-            .list li { margin: 0 0 5px; font-size: 12px; }
-            .spacer { height: 6px; }
-            .summary-box {
-              margin-top: 8px;
-              border: 1px solid #cbd5e1;
-              border-radius: 8px;
-              padding: 10px 12px;
-              background: #f8fafc;
-              overflow: hidden;
-              box-sizing: border-box;
+            .list {
+              margin: 0 0 10px 18px;
+              padding: 0;
             }
-            .grand-total-wrap {
-              margin-top: 10px;
-              width: 100%;
-              box-sizing: border-box;
+            .list li {
+              margin: 0 0 6px;
+              font-size: 12.5px;
+              line-height: 1.45;
             }
+            .note-box {
+              margin: 6px 0 10px;
+              border: 1px solid #b9e7df;
+              border-left: 4px solid #0f766e;
+              border-radius: 10px;
+              padding: 8px 10px;
+              background: linear-gradient(180deg, #f0fdfa, #f8fafc);
+            }
+            .note-label {
+              font-size: 10px;
+              text-transform: uppercase;
+              letter-spacing: 0.08em;
+              font-weight: 800;
+              color: #0b5e58;
+              margin-bottom: 4px;
+            }
+            .note-text {
+              font-size: 12.5px;
+              line-height: 1.45;
+              color: #1f2937;
+              white-space: pre-wrap;
+              overflow-wrap: anywhere;
+              word-break: break-word;
+            }
+            .spacer { height: 4px; }
+            .grand-total-wrap { margin-top: 10px; width: 100%; }
             .grand-total-line {
               width: 100%;
-              background: linear-gradient(90deg, #0f766e, #0ea5a4);
+              padding: 12px 14px;
+              border-radius: 10px;
               color: #ffffff;
-              border-radius: 8px;
-              padding: 10px 12px;
-              font-size: 13px;
-              font-weight: 700;
-              letter-spacing: 0.01em;
-              box-sizing: border-box;
+              font-size: 14px;
+              font-weight: 800;
+              letter-spacing: 0.02em;
+              background: linear-gradient(90deg, #0b5e58, #0f766e, #0ea5a4);
+              box-shadow: 0 8px 20px rgba(15, 118, 110, 0.25);
+              line-height: 1.35;
               white-space: normal;
               overflow-wrap: anywhere;
               word-break: break-word;
-              line-height: 1.35;
+            }
+            .footer-note {
+              margin-top: 12px;
+              font-size: 10px;
+              color: #6b7280;
+              text-align: center;
+              border-top: 1px dashed #d1d5db;
+              padding-top: 8px;
             }
             @media print {
-              body { display: block; }
+              body { background: #fff; }
               .sheet {
                 max-width: none;
                 border-radius: 0;
+                box-shadow: none;
+                border: 1px solid #d1d5db;
               }
             }
           </style>
@@ -191,6 +310,7 @@ export default function RateCalculatorPreview() {
             </div>
             <div class="content">
               ${renderedHtml}
+              <div class="footer-note">Prepared by Vision Travel Hub • Tailored itinerary & pricing document</div>
             </div>
           </div>
         </body>

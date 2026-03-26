@@ -11,12 +11,14 @@ import {
   FaMapMarkerAlt,
   FaHotel,
   FaTruck,
-  FaPlaneDeparture,
   FaStar,
   FaBuilding,
   FaUniversity,
   FaQrcode,
   FaCalculator,
+  FaPlane,
+  FaRupeeSign,
+  FaEnvelope,
 } from 'react-icons/fa';
 import Sidebar from './Sidebar';
 import Header from './Header';
@@ -36,8 +38,16 @@ const adminNav = [
   // { to: '/admin/packages', label: 'Packages', icon: FaCube },
   // { to: '/admin/package-builder', label: 'Package Builder', icon: FaCog },
   { to: '/admin/itinerary', label: 'Itinerary', icon: FaMapMarkerAlt },
-  { to: '/admin/transport', label: 'Transport', icon: FaPlaneDeparture },
   { to: '/admin/rate-calculator', label: 'Rate Calculator', icon: FaCalculator },
+  {
+    label: 'Travelling',
+    icon: FaPlane,
+    children: [
+      { to: '/admin/travelling/types', label: 'Types', icon: FaStar },
+      { to: '/admin/travelling/locations', label: 'Locations', icon: FaMapMarkerAlt },
+      { to: '/admin/travelling/prices', label: 'Prices', icon: FaRupeeSign },
+    ],
+  },
   {
     label: 'Preferred Items',
     icon: FaStar,
@@ -55,6 +65,7 @@ const adminNav = [
     icon: FaCog,
     children: [
       { to: '/admin/settings/company', label: 'Company Information', icon: FaBuilding },
+      { to: '/admin/settings/smtp', label: 'SMTP Settings', icon: FaEnvelope },
       { to: '/admin/settings/bank', label: 'Bank Details', icon: FaUniversity },
       { to: '/admin/settings/payment', label: 'Payment Settings', icon: FaQrcode },
       { to: '/admin/settings/branches', label: 'Branch Management', icon: FaMapMarkerAlt },

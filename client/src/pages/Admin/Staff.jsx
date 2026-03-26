@@ -12,7 +12,7 @@ export default function Staff() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState({ open: false, data: null });
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'staff', branch: 'Ahmedabad', branch_id: '' });
+  const [form, setForm] = useState({ name: '', email: '', mobile: '', password: '', role: 'staff', branch: 'Ahmedabad', branch_id: '' });
   const [branches, setBranches] = useState([]);
   const [saving, setSaving] = useState(false);
   const [pwModal, setPwModal] = useState({ open: false, staff: null });
@@ -33,13 +33,14 @@ export default function Staff() {
   const openAdd = () => {
     const defaultBranch = branches[0] || null;
     const branchLabel = defaultBranch ? defaultBranch.name : 'Ahmedabad';
-    setForm({ name: '', email: '', password: '', role: 'staff', branch: branchLabel, branch_id: defaultBranch?.id || '' });
+    setForm({ name: '', email: '', mobile: '', password: '', role: 'staff', branch: branchLabel, branch_id: defaultBranch?.id || '' });
     setModal({ open: true, data: null });
   };
   const openEdit = (row) => {
     setForm({
       name: row.name || '',
       email: row.email || '',
+      mobile: row.mobile || '',
       password: '',
       role: row.role || 'staff',
       branch: row.branch || 'Ahmedabad',
@@ -53,7 +54,7 @@ export default function Staff() {
     if (!form.name || !form.email) { toast('Name and email required', 'error'); return; }
     setSaving(true);
     if (modal.data) {
-      updateStaff(modal.data.id, { name: form.name, email: form.email, role: 'staff', branch: form.branch, branch_id: form.branch_id || null })
+      updateStaff(modal.data.id, { name: form.name, email: form.email, mobile: form.mobile, role: 'staff', branch: form.branch, branch_id: form.branch_id || null })
         .then(() => { toast('Staff updated'); setModal({ open: false, data: null }); load(); })
         .catch((err) => toast(err.response?.data?.message || 'Failed', 'error'))
         .finally(() => setSaving(false));
@@ -106,11 +107,12 @@ export default function Staff() {
           <div className="py-16 text-center text-slate-400 text-sm">No staff. Add manager or staff members.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[580px]">
+            <table className="w-full min-w-[700px]">
               <thead>
                 <tr className="bg-gradient-to-r from-teal-600 to-cyan-600 text-white">
                   <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Name</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Email</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Mobile</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Branch</th>
                   <th className="text-center px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Status</th>
                   <th className="text-right px-5 py-3.5 text-xs font-semibold uppercase tracking-wider">Actions</th>
@@ -121,6 +123,7 @@ export default function Staff() {
                   <tr key={row.id || i} className="hover:bg-teal-50/40 transition-colors">
                     <td className="px-5 py-3.5 text-sm font-semibold text-slate-800">{row.name || '-'}</td>
                     <td className="px-5 py-3.5 text-sm text-slate-600">{row.email || '-'}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-600">{row.mobile || '-'}</td>
                     <td className="px-5 py-3.5 text-sm text-slate-600">{row.branch || '-'}</td>
                     <td className="px-5 py-3.5 text-center">
                       {row.is_blocked
@@ -216,6 +219,11 @@ export default function Staff() {
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               required
               disabled={!!modal.data}
+            />
+            <Input
+              label="Mobile Number"
+              value={form.mobile}
+              onChange={(e) => setForm({ ...form, mobile: e.target.value })}
             />
           </div>
           {!modal.data && (

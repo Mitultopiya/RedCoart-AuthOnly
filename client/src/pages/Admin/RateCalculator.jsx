@@ -5,18 +5,22 @@ import {
   getCities,
   getHotels,
   getItineraryTemplates,
-  getTransports,
+  getTravellingLocations,
+  getTravellingPrices,
+  getTravellingTypes,
   getVehicles,
 } from '../../services/api';
 import { branchParams } from '../../utils/branch';
+import { getStoredUser } from '../../utils/auth';
 import { getUniqueStates } from '../../utils/cities';
+import { getTravellingRowAmount, normalizeTravellingType } from '../../utils/travelling';
 import TripDetails from './RateCalculator/TripDetails';
 import PassengerDetails from './RateCalculator/PassengerDetails';
 import HotelInfo from './RateCalculator/HotelInfo';
 import TransferDetails from './RateCalculator/TransferDetails';
-import TransportDetails from './RateCalculator/TransportDetails';
 import Activity from './RateCalculator/Activity';
 import OtherSection from './RateCalculator/OtherSection';
+import Button from '../../components/ui/Button';
 
 const PREVIEW_STORAGE_KEY = 'vth_rate_calculator_preview';
 const DRAFT_STORAGE_KEY = 'vth_rate_calculator_draft';
@@ -53,20 +57,38 @@ function getHotelStar(roomType) {
   return simple?.[1] || '';
 }
 
+const emptyTravellingRow = () => ({
+  transport_type: 'Train',
+  travelling_type_id: '',
+  from_location_id: '',
+  to_location_id: '',
+  from_date: '',
+  to_date: '',
+});
+
+function getTravellingPersonUnits(passenger) {
+  const couples = Number(passenger?.couples || 0);
+  const adults = Number(passenger?.adults || 0);
+  const children = Number(passenger?.children || 0);
+  return (couples * 2) + adults + (children * 0.5);
+}
+
 function buildPackageInfoText({
   trip,
   itineraryLabel,
+  itineraryNote,
   stops,
   passenger,
   hotelRows,
   transfers,
-  transports,
   activities,
+  travellingRows,
   other,
   hotelsMaster,
   vehiclesMaster,
-  transportsMaster,
   activitiesMaster,
+  travellingPricesMaster,
+  travellingLocationsMaster,
 }) {
   const totalNights = stops.reduce((sum, s) => sum + Number(s.nights || 0), 0);
   const totalDays = Number(trip.nights || totalNights || 0);
@@ -87,21 +109,6 @@ function buildPackageInfoText({
   (vehiclesMaster || []).forEach((v) => {
     if (!v?.name) return;
     vehiclePriceMap[String(v.name).toLowerCase()] = Number(v.price || 0);
-  });
-  const transportPriceMap = {};
-  const travelMonth = passenger.travelDate
-    ? new Date(passenger.travelDate).toLocaleString('en-US', { month: 'long' })
-    : '';
-  (transportsMaster || []).forEach((t) => {
-    if (!t?.transport_type || !t?.from_location || !t?.to_location) return;
-    const key = `${t.transport_type}: ${t.from_location} -> ${t.to_location}`;
-    const monthPrice = t.month_prices && typeof t.month_prices === 'object'
-      ? t.month_prices[travelMonth]
-      : null;
-    const rate = monthPrice != null && monthPrice !== ''
-      ? Number(monthPrice || 0)
-      : Number(t.price || 0);
-    transportPriceMap[String(key).toLowerCase()] = rate;
   });
   const activityPriceMap = {};
   (activitiesMaster || []).forEach((a) => {
@@ -146,26 +153,7 @@ function buildPackageInfoText({
     });
   const transferTotal = transferDetails.reduce((sum, t) => sum + Number(t.amount || 0), 0);
   const transferLines = transferDetails
-    .map((t, idx) => `${idx + 1}) ${t.vehicle} x ${t.qty} x ${Math.max(1, totalDays)} day(s)`)
-    .join('\n') || '-';
-
-  const transportDetails = (transports || [])
-    .filter((t) => t.transport)
-    .map((t) => {
-      const qty = Number(t.quantity || 1);
-      const rate = transportPriceMap[String(t.transport || '').toLowerCase()] || 0;
-      // One-time transport charge per person weight:
-      // couple = 2x, adult = 1x, child = 0.5x
-      const coupleUnits = Number(passenger.couples || 0) * 2;
-      const adultUnits = Number(passenger.adults || 0);
-      const childUnits = Number(passenger.children || 0) * 0.5;
-      const personUnits = Math.max(1, coupleUnits + adultUnits + childUnits);
-      const amount = qty * rate * personUnits;
-      return { ...t, qty, rate, amount, personUnits };
-    });
-  const transportTotal = transportDetails.reduce((sum, t) => sum + Number(t.amount || 0), 0);
-  const transportLines = transportDetails
-    .map((t, idx) => `${idx + 1}) ${t.transport}`)
+    .map((t, idx) => `${idx + 1}) ${t.vehicle} x ${t.qty}`)
     .join('\n') || '-';
 
   const activityDetails = (activities || [])
@@ -180,9 +168,46 @@ function buildPackageInfoText({
     .map((a, idx) => `${idx + 1}) ${a.activity}`)
     .join('\n') || '-';
 
-  const subtotal = hotelTotal + transferTotal + transportTotal + activityTotal;
+  const travellingLocationMap = Object.fromEntries(
+    (travellingLocationsMaster || []).map((loc) => [Number(loc.id), loc])
+  );
+  const travellingPriceMap = Object.fromEntries(
+    (travellingPricesMaster || []).map((price) => [
+      `${normalizeTravellingType(price.transport_type)}|${Number(price.from_location_id)}|${Number(price.to_location_id)}`,
+      price,
+    ])
+  );
+  const travellingPersonUnits = Math.max(0, getTravellingPersonUnits(passenger));
+  const travellingDetails = (travellingRows || [])
+    .filter((row) => row.from_location_id && row.to_location_id && row.from_date)
+    .map((row) => {
+      const key = `${normalizeTravellingType(row.transport_type)}|${Number(row.from_location_id)}|${Number(row.to_location_id)}`;
+      const priceRow = travellingPriceMap[key];
+      const amountPerPerson = getTravellingRowAmount(priceRow, row.from_date, row.to_date);
+      const amount = amountPerPerson * travellingPersonUnits;
+      const fromLabel = travellingLocationMap[Number(row.from_location_id)]?.location_name || '-';
+      const toLabel = travellingLocationMap[Number(row.to_location_id)]?.location_name || '-';
+      return { ...row, amount, fromLabel, toLabel };
+    });
+  const travellingTotal = travellingDetails.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const travellingLines = travellingDetails
+    .map((row, idx) => {
+      const toDate = row.to_date || row.from_date;
+      const dateLabel = toDate && toDate !== row.from_date
+        ? `${row.from_date} to ${toDate}`
+        : row.from_date;
+      return (
+        `${idx + 1}) ${row.transport_type} / ${row.type_name || '-'}\n` +
+        `   Route: ${row.fromLabel} -> ${row.toLabel}\n` +
+        `   Date: ${dateLabel}`
+      );
+    })
+    .join('\n') || '-';
+
+  const subtotal = hotelTotal + transferTotal + activityTotal + travellingTotal;
   const markupValue = Number(other.markup || 0);
   const grandTotal = subtotal + markupValue;
+  const templateNote = String(itineraryNote || '').trim();
 
   return (
     `📦 PACKAGE INFO\n` +
@@ -191,7 +216,8 @@ function buildPackageInfoText({
     `🧭 Trip Details:\n` +
     `- State: ${trip.stateName || '-'}\n` +
     `- Nights: ${trip.nights || totalNights || '-'}\n` +
-    `- Itinerary: ${itineraryLabel || '-'}\n\n` +
+    `- Itinerary: ${itineraryLabel || '-'}\n` +
+    `- Note: ${templateNote || '-'}\n\n` +
     `👨‍👩‍👧 Passenger Details:\n` +
     `- Travel Date: ${passenger.travelDate || '-'}\n` +
     `- No. of Couples: ${passenger.couples || '0'}\n` +
@@ -203,7 +229,7 @@ function buildPackageInfoText({
     `🏢 Company: ${other.companyName || '-'}\n\n` +
     `🏨 Hotels:\n${hotels}\n\n` +
     `🚕 Transfers:\n${transferLines}\n\n` +
-    `✈️ Transport:\n${transportLines}\n\n` +
+    `🛫 Travelling:\n${travellingLines}\n\n` +
     `🎯 Activities:\n${activityLines}\n\n` +
     `💰 PRICE SUMMARY:\n` +
     `- GRAND TOTAL: ${inr(grandTotal)}`
@@ -213,6 +239,16 @@ function buildPackageInfoText({
 export default function RateCalculator() {
   const navigate = useNavigate();
   const location = useLocation();
+  const currentUser = getStoredUser();
+  const isStaffUser = String(currentUser?.role || '').toLowerCase() === 'staff';
+  const staffMobile = String(
+    currentUser?.mobile
+    || currentUser?.phone
+    || currentUser?.phone_number
+    || currentUser?.contact_mobile
+    || ''
+  ).trim();
+  const defaultCompanyContact = isStaffUser && staffMobile ? staffMobile : '7818814380';
   const isEditMode = useMemo(() => new URLSearchParams(location.search).get('edit') === '1', [location.search]);
   const [trip, setTrip] = useState({
     stateName: '',
@@ -226,11 +262,11 @@ export default function RateCalculator() {
     children: '0',
   });
   const [transfers, setTransfers] = useState([{ vehicle: '', quantity: '1' }]);
-  const [transports, setTransports] = useState([{ transport: '', quantity: '1' }]);
+  const [travellingRows, setTravellingRows] = useState([emptyTravellingRow()]);
   const [activities, setActivities] = useState([{ activity: '' }]);
   const [other, setOther] = useState({
     markup: '0',
-    companyContact: '7818814380',
+    companyContact: defaultCompanyContact,
     companyName: 'Vision Travel Hub',
   });
   const [hotelStarFilter, setHotelStarFilter] = useState('');
@@ -239,8 +275,10 @@ export default function RateCalculator() {
   const [cities, setCities] = useState([]);
   const [hotels, setHotels] = useState([]);
   const [vehicles, setVehicles] = useState([]);
-  const [transportsMaster, setTransportsMaster] = useState([]);
   const [activityMasters, setActivityMasters] = useState([]);
+  const [travellingTypesMaster, setTravellingTypesMaster] = useState([]);
+  const [travellingLocationsMaster, setTravellingLocationsMaster] = useState([]);
+  const [travellingPricesMaster, setTravellingPricesMaster] = useState([]);
   const [draftLoaded, setDraftLoaded] = useState(false);
 
   useEffect(() => {
@@ -257,7 +295,7 @@ export default function RateCalculator() {
         if (draft?.trip) setTrip(draft.trip);
         if (draft?.passenger) setPassenger(draft.passenger);
         if (Array.isArray(draft?.transfers)) setTransfers(draft.transfers);
-        if (Array.isArray(draft?.transports)) setTransports(draft.transports);
+        if (Array.isArray(draft?.travellingRows)) setTravellingRows(draft.travellingRows);
         if (Array.isArray(draft?.activities)) setActivities(draft.activities);
         if (draft?.other) setOther(draft.other);
         if (Array.isArray(draft?.hotelInfoRows)) setHotelInfoRows(draft.hotelInfoRows);
@@ -275,13 +313,13 @@ export default function RateCalculator() {
       trip,
       passenger,
       transfers,
-      transports,
+      travellingRows,
       activities,
       other,
       hotelInfoRows,
     };
     sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
-  }, [trip, passenger, transfers, transports, activities, other, hotelInfoRows, draftLoaded]);
+  }, [trip, passenger, transfers, travellingRows, activities, other, hotelInfoRows, draftLoaded]);
 
   useEffect(() => {
     const params = branchParams('all');
@@ -290,11 +328,13 @@ export default function RateCalculator() {
       getCities(params),
       getHotels(params),
       getVehicles(params),
-      getTransports(params),
       getActivities(params),
+      getTravellingTypes(params),
+      getTravellingLocations(params),
+      getTravellingPrices(params),
     ])
       .then((results) => {
-        const [itinerariesRes, citiesRes, hotelsRes, vehiclesRes, transportsRes, activitiesRes] = results;
+        const [itinerariesRes, citiesRes, hotelsRes, vehiclesRes, activitiesRes, travellingTypesRes, travellingLocationsRes, travellingPricesRes] = results;
         setItineraryTemplates(
           itinerariesRes.status === 'fulfilled'
             ? (itinerariesRes.value.data || []).filter((t) => t.is_active)
@@ -303,8 +343,10 @@ export default function RateCalculator() {
         setCities(citiesRes.status === 'fulfilled' ? (citiesRes.value.data || []) : []);
         setHotels(hotelsRes.status === 'fulfilled' ? (hotelsRes.value.data || []) : []);
         setVehicles(vehiclesRes.status === 'fulfilled' ? (vehiclesRes.value.data || []) : []);
-        setTransportsMaster(transportsRes.status === 'fulfilled' ? (transportsRes.value.data || []) : []);
         setActivityMasters(activitiesRes.status === 'fulfilled' ? (activitiesRes.value.data || []) : []);
+        setTravellingTypesMaster(travellingTypesRes.status === 'fulfilled' ? (travellingTypesRes.value.data || []) : []);
+        setTravellingLocationsMaster(travellingLocationsRes.status === 'fulfilled' ? (travellingLocationsRes.value.data || []) : []);
+        setTravellingPricesMaster(travellingPricesRes.status === 'fulfilled' ? (travellingPricesRes.value.data || []) : []);
       });
   }, []);
 
@@ -384,12 +426,6 @@ export default function RateCalculator() {
     () => [...new Set(vehicles.map((v) => v.name).filter(Boolean))],
     [vehicles]
   );
-  const transportOptions = useMemo(
-    () => (transportsMaster || [])
-      .filter((t) => t?.transport_type && t?.from_location && t?.to_location)
-      .map((t) => `${t.transport_type}: ${t.from_location} -> ${t.to_location}`),
-    [transportsMaster]
-  );
   const activityOptions = useMemo(
     () => [...new Set(activityMasters.map((a) => a.name).filter(Boolean))],
     [activityMasters]
@@ -398,6 +434,41 @@ export default function RateCalculator() {
     () => Object.fromEntries(activityMasters.map((a) => [String(a.name || '').toLowerCase(), Number(a.price || 0)])),
     [activityMasters]
   );
+  const travellingTypesByMode = useMemo(() => {
+    const grouped = { Train: [], Flight: [] };
+    (travellingTypesMaster || []).forEach((row) => {
+      const mode = normalizeTravellingType(row.transport_type);
+      grouped[mode].push(row);
+    });
+    return grouped;
+  }, [travellingTypesMaster]);
+  const travellingLocationsByModeType = useMemo(() => {
+    const grouped = {};
+    (travellingLocationsMaster || []).forEach((row) => {
+      const mode = normalizeTravellingType(row.transport_type);
+      const typeId = Number(row.travelling_type_id || 0);
+      const key = `${mode}|${typeId}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(row);
+    });
+    return grouped;
+  }, [travellingLocationsMaster]);
+  const travellingPriceMap = useMemo(
+    () =>
+      Object.fromEntries(
+        (travellingPricesMaster || []).map((price) => [
+          `${normalizeTravellingType(price.transport_type)}|${Number(price.from_location_id)}|${Number(price.to_location_id)}`,
+          price,
+        ])
+      ),
+    [travellingPricesMaster]
+  );
+  const getTravellingAmount = (row) => {
+    const key = `${normalizeTravellingType(row.transport_type)}|${Number(row.from_location_id)}|${Number(row.to_location_id)}`;
+    const units = Math.max(0, getTravellingPersonUnits(passenger));
+    const amountPerPerson = getTravellingRowAmount(travellingPriceMap[key], row.from_date, row.to_date);
+    return amountPerPerson * units;
+  };
   useEffect(() => {
     if (!trip.itineraryId) return;
     const existsInFiltered = filteredItineraryOptions.some((item) => String(item.id) === String(trip.itineraryId));
@@ -429,17 +500,22 @@ export default function RateCalculator() {
     const text = buildPackageInfoText({
       trip,
       itineraryLabel: selectedTemplate?.title || '',
+      itineraryNote: selectedTemplate?.notes || '',
       stops: parsedStops,
       passenger,
       hotelRows: hotelInfoRows,
       transfers,
-      transports,
       activities,
+      travellingRows: travellingRows.map((row) => {
+        const typeName = travellingTypesMaster.find((t) => Number(t.id) === Number(row.travelling_type_id))?.name || '';
+        return { ...row, type_name: typeName };
+      }),
       other,
       hotelsMaster: hotels,
       vehiclesMaster: vehicles,
-      transportsMaster,
       activitiesMaster: activityMasters,
+      travellingLocationsMaster,
+      travellingPricesMaster,
     });
     if (typeof window !== 'undefined') {
       sessionStorage.setItem(PREVIEW_STORAGE_KEY, text);
@@ -475,8 +551,6 @@ export default function RateCalculator() {
 
       <PassengerDetails form={passenger} setForm={setPassenger} />
 
-      <TransportDetails transports={transports} setTransports={setTransports} transportOptions={transportOptions} />
-
       <HotelInfo
         rows={hotelInfoRows}
         setRows={setHotelInfoRows}
@@ -487,6 +561,62 @@ export default function RateCalculator() {
 
 
       <TransferDetails transfers={transfers} setTransfers={setTransfers} vehicleOptions={vehicleOptions} />
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm sm:text-base font-semibold text-slate-800">Travelling</h3>
+          <Button type="button" size="sm" onClick={() => setTravellingRows((prev) => [...prev, emptyTravellingRow()])}>+ Add Row</Button>
+        </div>
+        {travellingRows.map((row, idx) => {
+          const mode = normalizeTravellingType(row.transport_type);
+          const typeOptions = travellingTypesByMode[mode] || [];
+          const locationOptions = travellingLocationsByModeType[`${mode}|${Number(row.travelling_type_id || 0)}`] || [];
+          const amount = getTravellingAmount(row);
+          return (
+            <div key={idx} className="grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Transport Type</label>
+                <select value={row.transport_type} onChange={(e) => setTravellingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, transport_type: e.target.value, travelling_type_id: '', from_location_id: '', to_location_id: '' } : r)))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <option value="Train">Train</option>
+                  <option value="Flight">Flight</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
+                <select value={row.travelling_type_id} onChange={(e) => setTravellingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, travelling_type_id: e.target.value, from_location_id: '', to_location_id: '' } : r)))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <option value="">Select type</option>
+                  {typeOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">From Location</label>
+                <select value={row.from_location_id} onChange={(e) => setTravellingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, from_location_id: e.target.value } : r)))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <option value="">Select from</option>
+                  {locationOptions.map((l) => <option key={l.id} value={l.id}>{l.location_name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">To Location</label>
+                <select value={row.to_location_id} onChange={(e) => setTravellingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, to_location_id: e.target.value } : r)))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <option value="">Select to</option>
+                  {locationOptions.map((l) => <option key={l.id} value={l.id}>{l.location_name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Date</label>
+                <input type="date" value={row.from_date} onChange={(e) => setTravellingRows((prev) => prev.map((r, i) => (i === idx ? { ...r, from_date: e.target.value } : r)))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Price</label>
+                <input value={amount ? `Rs. ${Number(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'} readOnly className="w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-700 font-medium" />
+              </div>
+              <div>
+                <Button type="button" variant="danger" size="sm" onClick={() => setTravellingRows((prev) => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev)} disabled={travellingRows.length === 1}>Remove</Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       <Activity
         activities={activities}

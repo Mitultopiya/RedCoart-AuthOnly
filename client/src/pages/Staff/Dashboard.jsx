@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   FaUsers,
   FaRupeeSign,
@@ -6,6 +7,8 @@ import {
   FaBell,
   FaHistory,
   FaWhatsapp,
+  FaCalculator,
+  FaFileInvoice,
 } from 'react-icons/fa';
 import { getDashboard } from '../../services/api';
 import Loading from '../../components/Loading';
@@ -60,6 +63,13 @@ function StatCard({ icon: Icon, label, value, color }) {
   );
 }
 
+const quickLinks = [
+  { to: '/staff/customers', label: 'Customers', icon: FaUsers },
+  { to: '/staff/invoice', label: 'Invoice', icon: FaFileInvoice },
+  { to: '/staff/payment-slip', label: 'Payment Slip', icon: FaFileInvoice },
+  { to: '/staff/rate-calculator', label: 'Rate Calculator', icon: FaCalculator },
+];
+
 export default function StaffDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -92,6 +102,26 @@ export default function StaffDashboard() {
           <p className="text-sm text-slate-500 mt-1">Live branch performance, collections, and payment tracking.</p>
         </div>
         <span className="text-xs sm:text-sm text-slate-500">{todayLabel}</span>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {quickLinks.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              className="bg-white rounded-2xl border border-slate-100 shadow-sm p-3.5 sm:p-4 hover:border-primary-200 hover:shadow-md transition min-h-[64px] flex items-center"
+            >
+              <div className="flex items-center gap-2.5 sm:gap-3">
+                <div className="w-9 h-9 rounded-xl bg-primary-100 text-primary-700 flex items-center justify-center">
+                  <Icon className="text-sm" />
+                </div>
+                <span className="text-sm font-semibold text-slate-700">{item.label}</span>
+              </div>
+            </Link>
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">

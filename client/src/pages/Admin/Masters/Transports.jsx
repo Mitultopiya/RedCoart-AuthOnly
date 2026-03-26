@@ -16,7 +16,7 @@ const TRANSPORT_TYPES = ['Flight', 'Train'];
 
 const emptyMonthPrices = () => MONTHS.reduce((acc, m) => ({ ...acc, [m]: '' }), {});
 
-export default function Transports() {
+export default function Transports({ forcedType = '', title = 'Transport' }) {
   const { toast } = useToast();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +25,7 @@ export default function Transports() {
   const [branchId, setBranchId] = useState(() => getSelectedBranchId());
   const [modal, setModal] = useState({ open: false, data: null });
   const [form, setForm] = useState({
-    transport_type: 'Flight',
+    transport_type: forcedType || 'Flight',
     from_location: '',
     to_location: '',
     base_price: '',
@@ -64,7 +64,7 @@ export default function Transports() {
 
   const openAdd = () => {
     setForm({
-      transport_type: 'Flight',
+      transport_type: forcedType || 'Flight',
       from_location: '',
       to_location: '',
       base_price: '',
@@ -83,7 +83,7 @@ export default function Transports() {
       });
     }
     setForm({
-      transport_type: row.transport_type || 'Flight',
+      transport_type: forcedType || row.transport_type || 'Flight',
       from_location: row.from_location || '',
       to_location: row.to_location || '',
       base_price: row.base_price != null ? String(row.base_price) : '',
@@ -131,13 +131,15 @@ export default function Transports() {
   };
 
   const grouped = useMemo(() => (
-    list.reduce((acc, row) => {
+    list
+      .filter((row) => !forcedType || String(row.transport_type || '').toLowerCase() === String(forcedType).toLowerCase())
+      .reduce((acc, row) => {
       const key = row.transport_type || 'Other';
       if (!acc[key]) acc[key] = [];
       acc[key].push(row);
       return acc;
     }, {})
-  ), [list]);
+  ), [list, forcedType]);
 
   const cityOptions = useMemo(() => {
     const names = Array.from(new Set((cities || []).map((c) => String(c.name || '').trim()).filter(Boolean)));
@@ -147,16 +149,16 @@ export default function Transports() {
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-        <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Transport</h1>
-        <Button onClick={openAdd}>+ Add Transport</Button>
+        <h1 className="text-xl sm:text-2xl font-bold text-slate-800">{title}</h1>
+        <Button onClick={openAdd}>+ Add {forcedType || 'Transport'}</Button>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100">
         {loading ? (
           <Loading />
-        ) : list.length === 0 ? (
+          ) : Object.keys(grouped).length === 0 ? (
           <div className="py-16 text-center text-slate-400 text-sm">
-            No transport records. Add your first transport.
+              No {String(title).toLowerCase()} records. Add your first one.
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
@@ -211,19 +213,21 @@ export default function Transports() {
         title={modal.data ? 'Edit Transport' : 'Add Transport'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Transport Type *</label>
-            <select
-              value={form.transport_type}
-              onChange={(e) => setForm((prev) => ({ ...prev, transport_type: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
-              required
-            >
-              {TRANSPORT_TYPES.map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </div>
+          {!forcedType && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Transport Type *</label>
+              <select
+                value={form.transport_type}
+                onChange={(e) => setForm((prev) => ({ ...prev, transport_type: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+                required
+              >
+                {TRANSPORT_TYPES.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
